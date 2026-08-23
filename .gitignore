@@ -141,3 +141,19 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/Cargo.lock
+*.pdb
+
+# App data (local dev)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+.env.local
+
+# Editor
+.idea
+.DS_Store
