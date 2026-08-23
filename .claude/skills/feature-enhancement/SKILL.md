@@ -198,7 +198,7 @@ Step 9):
    Step 9's wrap-up.
 2. Transition the issue via `mcp__atlassian__getTransitionsForJiraIssue` +
    `mcp__atlassian__transitionJiraIssue` to whichever returned transition's target status is named
-   **"In Review"** — look it up rather than hardcoding a transition ID, since IDs can differ across
+   **"Done"** — look it up rather than hardcoding a transition ID, since IDs can differ across
    projects/workflows.
 
 ## Step 9 — Wrap up
