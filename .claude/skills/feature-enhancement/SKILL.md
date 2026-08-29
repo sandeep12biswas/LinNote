@@ -93,11 +93,11 @@ they want changes to scope, update the summary and ask again — don't silently 
 
 Once confirmed, before touching any files, set up an isolated branch for this story — never
 implement directly on top of whatever branch happened to be checked out when the skill started.
-Delegate this to `scripts/create-feature-branch.sh`, which handles base-branch
+Delegate this to `.claude/skills/feature-enhancement/scripts/create-feature-branch.sh`, which handles base-branch
 resolution/import, the dirty-working-tree guard, and branch creation:
 
 ```bash
-scripts/create-feature-branch.sh <issue-key> <short-kebab-slug> [base-branch]
+.claude/skills/feature-enhancement/scripts/create-feature-branch.sh <issue-key> <short-kebab-slug> [base-branch]
 ```
 
 1. **`<issue-key>`** — the resolved key from Step 1 (e.g. `NTA-23`), case-insensitive.

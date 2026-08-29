@@ -6,7 +6,7 @@
 # cut feature/<issue-key>[-<slug>] off it.
 #
 # Usage:
-#   scripts/create-feature-branch.sh <JIRA-ID> "<short description>" [base-branch]
+#   .claude/skills/feature-enhancement/scripts/create-feature-branch.sh <JIRA-ID> "<short description>" [base-branch]
 #
 # Arguments:
 #   JIRA-ID           Required. e.g. NTA-23. Matches [A-Za-z]+-[0-9]+.
@@ -16,11 +16,11 @@
 #                      branch — main is reserved for PRs/releases).
 #
 # Examples:
-#   scripts/create-feature-branch.sh NTA-23 "dark mode toggle"
+#   .claude/skills/feature-enhancement/scripts/create-feature-branch.sh NTA-23 "dark mode toggle"
 #     -> feature/nta-23-dark-mode-toggle, off develop
-#   scripts/create-feature-branch.sh NTA-23 "dark mode toggle" feature/working-app-v2
+#   .claude/skills/feature-enhancement/scripts/create-feature-branch.sh NTA-23 "dark mode toggle" feature/working-app-v2
 #     -> feature/nta-23-dark-mode-toggle, off feature/working-app-v2
-#   scripts/create-feature-branch.sh NTA-23 ""
+#   .claude/skills/feature-enhancement/scripts/create-feature-branch.sh NTA-23 ""
 #     -> feature/nta-23, off develop
 
 set -euo pipefail
