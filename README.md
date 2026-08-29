@@ -65,3 +65,12 @@ See [`docs/architecture.md`](docs/architecture.md) for the full plan:
 plugin architecture and extension points, workspace/page/segment data
 model, persistence and cloud-sync design, repository/tooling strategy,
 and the phased implementation plan.
+
+## Progress log
+
+Completed work, one entry per Jira ticket (tracked in project **NTA** —
+see `CLAUDE.md`'s "Project tracking" section):
+
+| Ticket | Summary |
+|---|---|
+| [NTA-8](https://sandeep12biswas.atlassian.net/browse/NTA-8) | Registry: manifest discovery & dependency-sorted activation order. `resolveActivationOrder()` (`apps/desktop/src/registry/index.ts`) topologically sorts a set of plugins by `manifest.dependencies`; a missing or circular dependency (direct, transitive, or self) is reported per-plugin and that plugin excluded, rather than the whole resolution throwing. |
