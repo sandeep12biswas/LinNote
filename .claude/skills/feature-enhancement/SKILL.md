@@ -226,9 +226,10 @@ Step 9):
 - Report the final test run result verbatim (counts, not just "tests pass"; note explicitly if
   a Rust toolchain genuinely wasn't available to run tests written in `src-tauri/` — don't
   assume that's the case without checking `cargo -V` first).
-- `docs/architecture.md` and `README.md` get updated per *phase* (NTA-1 … NTA-6, per `CLAUDE.md`'s
-  "Project tracking" section), not per individual task/story — don't update them reflexively
-  here. If this story completes a phase of work, ask the user whether they want those docs
-  updated now.
+- `docs/architecture.md` and `README.md` get updated per *phase* (per `docs/architecture.md`
+  §9's phase list and `CLAUDE.md`'s "Project tracking" section — e.g. Phase 1 is tracked as
+  NTA-7 with subtasks NTA-8..NTA-15, and NTA-16 with NTA-17..NTA-31), not per individual
+  task/subtask — don't update them reflexively here. If this story completes a phase of work,
+  ask the user whether they want those docs updated now.
 - Optionally offer (don't do it unasked) to open a pull request from the pushed feature branch
   (e.g. via `gh pr create`) targeting the base branch resolved in Step 4.

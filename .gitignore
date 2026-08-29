@@ -147,6 +147,9 @@ src-tauri/target/
 src-tauri/Cargo.lock
 *.pdb
 
+# Turborepo cache (root and per-package)
+.turbo/
+
 # App data (local dev)
 *.db
 *.db-journal
