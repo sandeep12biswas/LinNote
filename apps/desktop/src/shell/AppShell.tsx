@@ -7,29 +7,34 @@
 // ticket. "Window scope (decided)" per §2: single page open at a time, no
 // tab strip, no multi-window model — the Editor Canvas pane below is a
 // single static placeholder, not a tab strip.
+//
+// NTA-15 (integration): `registeredPlugins`/`onRunCommand` now come from a
+// real, activated `PluginRegistry` (../App.tsx owns building it) instead
+// of a hardcoded empty list and a console.log stub — the menu bar/toolbar
+// regions render whatever the active plugins actually contribute, and a
+// click really runs that plugin's registered command via the shared
+// command bus (../registry/createContext.ts). `PluginsStatusPanel` below
+// is the minimal "Settings > Plugins" stand-in described there.
 
 import { buildMenuBar, buildToolbar } from "./index";
 import { MenuBar } from "./MenuBar";
 import { Toolbar } from "./Toolbar";
+import { PluginsStatusPanel } from "./PluginsStatusPanel";
+import type { RegisteredPlugin } from "../registry";
 
-export function AppShell() {
-  // TODO(phase-1): there's no live PluginRegistry wired up yet (NTA-16),
-  // so these are built from an empty plugin list — the menu bar/toolbar
-  // regions render correctly positioned but with no items until NTA-16
-  // threads a real, populated `RegisteredPlugin[]` through here.
-  const menuBarModel = buildMenuBar([]);
-  const toolbarModel = buildToolbar([]);
+export interface AppShellProps {
+  registeredPlugins: RegisteredPlugin[];
+  onRunCommand: (commandId: string) => void;
+}
 
-  // No command bus exists yet either (also NTA-16) — this stub just logs
-  // so `onRunCommand` has somewhere real to go for now.
-  function runCommand(commandId: string) {
-    console.log(`TODO(phase-1, NTA-16): dispatch command "${commandId}"`);
-  }
+export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
+  const menuBarModel = buildMenuBar(registeredPlugins);
+  const toolbarModel = buildToolbar(registeredPlugins);
 
   return (
     <div className="app-shell">
-      <MenuBar model={menuBarModel} onRunCommand={runCommand} />
-      <Toolbar model={toolbarModel} onRunCommand={runCommand} />
+      <MenuBar model={menuBarModel} onRunCommand={onRunCommand} />
+      <Toolbar model={toolbarModel} onRunCommand={onRunCommand} />
       <div className="app-shell__main">
         <section className="app-shell__pane app-shell__pane--folder-tree" aria-label="Folder Tree">
           <h2 className="app-shell__pane-label">Folder Tree</h2>
@@ -41,6 +46,7 @@ export function AppShell() {
           <h2 className="app-shell__pane-label">Editor Canvas</h2>
         </section>
       </div>
+      <PluginsStatusPanel registeredPlugins={registeredPlugins} />
     </div>
   );
 }
