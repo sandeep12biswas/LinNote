@@ -26,6 +26,12 @@
 // Editor Canvas placeholder panes into the full layout from §2 — `App.tsx`
 // just renders it.
 //
+// NTA-15 (integration) wires a real, activated `PluginRegistry` (built in
+// ../App.tsx) into `AppShell` — `buildMenuBar`/`buildToolbar` above now run
+// against real active plugins instead of an empty list — and adds
+// `PluginsStatusPanel` (./PluginsStatusPanel.tsx), the minimal
+// "Settings > Plugins" stand-in the story's acceptance criteria needs.
+//
 // TODO(phase-2): Folder Tree pane + Page List pane (§4.1, §5.4), fractional
 // -index drag-to-reorder, breadcrumb trail.
 
@@ -176,3 +182,6 @@ export type { MenuBarProps } from "./MenuBar";
 export { Toolbar } from "./Toolbar";
 export type { ToolbarProps } from "./Toolbar";
 export { AppShell } from "./AppShell";
+export type { AppShellProps } from "./AppShell";
+export { PluginsStatusPanel } from "./PluginsStatusPanel";
+export type { PluginsStatusPanelProps } from "./PluginsStatusPanel";

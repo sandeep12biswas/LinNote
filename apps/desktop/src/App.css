@@ -139,6 +139,75 @@ button {
   flex: 1 1 auto;
 }
 
+.app-shell--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1em;
+  opacity: 0.7;
+}
+
+/* ---- Settings > Plugins minimal stand-in (NTA-15) ---- */
+
+.plugins-status-panel {
+  flex: 0 0 auto;
+  max-height: 8em;
+  overflow: auto;
+  padding: 0.5em 0.75em;
+  border-top: 1px solid #d9d9d9;
+  background-color: #fafafa;
+  font-size: 0.85em;
+}
+
+.plugins-status-panel__title {
+  margin: 0 0 0.35em;
+  font-size: 1em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+
+.plugins-status-panel__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugins-status-panel__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+  padding: 0.15em 0.5em;
+  border-radius: 0.25em;
+  background-color: #ffffff;
+  border: 1px solid #d9d9d9;
+}
+
+.plugins-status-panel__id {
+  opacity: 0.55;
+  font-size: 0.9em;
+}
+
+.plugins-status-panel__state {
+  font-weight: 600;
+}
+
+.plugins-status-panel__item--active .plugins-status-panel__state {
+  color: #1a7f37;
+}
+
+.plugins-status-panel__item--disabled .plugins-status-panel__state {
+  opacity: 0.6;
+}
+
+.plugins-status-panel__item--failed .plugins-status-panel__state {
+  color: #cf222e;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
@@ -147,13 +216,20 @@ button {
 
   .menu-bar,
   .app-shell__pane--folder-tree,
-  .app-shell__pane--page-list {
+  .app-shell__pane--page-list,
+  .plugins-status-panel {
     border-color: #4a4a4a;
   }
 
   .menu-bar,
-  .toolbar {
+  .toolbar,
+  .plugins-status-panel {
     background-color: #1f1f1f;
+  }
+
+  .plugins-status-panel__item {
+    background-color: #2a2a2a;
+    border-color: #4a4a4a;
   }
 
   .menu-bar__dropdown {

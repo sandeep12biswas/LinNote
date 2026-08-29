@@ -24,7 +24,22 @@
     "react-window": "^1.8.11",
     "@linnote/plugin-sdk": "workspace:*",
     "@linnote/rich-text-engine": "workspace:*",
-    "@linnote/contrast-util": "workspace:*"
+    "@linnote/contrast-util": "workspace:*",
+    "@linnote/plugin-format-bold": "workspace:*",
+    "@linnote/plugin-format-italic": "workspace:*",
+    "@linnote/plugin-format-font-color": "workspace:*",
+    "@linnote/plugin-format-font-size": "workspace:*",
+    "@linnote/plugin-format-headers": "workspace:*",
+    "@linnote/plugin-format-bullet-list": "workspace:*",
+    "@linnote/plugin-format-checkbox-list": "workspace:*",
+    "@linnote/plugin-format-alignment": "workspace:*",
+    "@linnote/plugin-element-ink": "workspace:*",
+    "@linnote/plugin-element-text-segment": "workspace:*",
+    "@linnote/plugin-element-image": "workspace:*",
+    "@linnote/plugin-element-file-attachment": "workspace:*",
+    "@linnote/plugin-element-youtube-embed": "workspace:*",
+    "@linnote/plugin-sync-onedrive": "workspace:*",
+    "@linnote/plugin-sync-google-drive": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",

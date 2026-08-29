@@ -8,11 +8,15 @@
 // activation order — a pure function), NTA-9 (activate()/deactivate()
 // lifecycle + persisted enable/disable), and NTA-10 (isolated
 // activate()-throwing failure handling, below). Wiring the real
-// plugins/* packages in at app startup is NTA-16 (integration). The
-// Settings > Plugins panel half of NTA-10 is a separate plugin,
-// `plugins/settings-plugins-panel` (`core.settings.plugins`) — it
-// declares the `settingsPanels` contribution; actually rendering it
-// waits on a Settings UI shell that doesn't exist in any ticket yet.
+// plugins/* packages in at app startup — instantiating this registry with
+// a real `createContext` (./createContext.ts) and `FileSystemPersistenceProvider`
+// (../persistence/), and activating all 15 core.* plugins — is NTA-15
+// (integration; ../App.tsx). The Settings > Plugins panel half of NTA-10
+// is a separate plugin, `plugins/settings-plugins-panel`
+// (`core.settings.plugins`) — it declares the `settingsPanels`
+// contribution; a real Settings UI shell to render it into still doesn't
+// exist (NTA-15's acceptance criteria is satisfied with a minimal inline
+// plugin-status list instead, `../shell/PluginsStatusPanel.tsx`).
 
 import type { Plugin, PluginContext, PluginId } from "@linnote/plugin-sdk";
 import type { PersistenceProvider, PluginSettingsStore } from "../persistence";
@@ -301,3 +305,6 @@ export class PluginRegistry {
     return plugin;
   }
 }
+
+export { createCommandBus, createPluginContextFactory } from "./createContext";
+export type { CommandBus, ContextFactoryOptions } from "./createContext";
