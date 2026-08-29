@@ -30,5 +30,19 @@ pkg.name = `@linnote/plugin-${name}`;
 pkg.description = `TODO: describe this plugin. Scaffolded from plugins/_template (Plugins §8).`;
 writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
 
+// _template's own name leaks into two other scaffolded files — fix both
+// so a fresh plugin doesn't ship a stale "_template" title/comment.
+const playgroundPath = join(dest, "playground.tsx");
+writeFileSync(
+  playgroundPath,
+  readFileSync(playgroundPath, "utf8").replace("@linnote/plugin-_template", pkg.name),
+);
+
+const indexHtmlPath = join(dest, "index.html");
+writeFileSync(
+  indexHtmlPath,
+  readFileSync(indexHtmlPath, "utf8").replace("<title>Plugin Template —", `<title>${name} —`),
+);
+
 console.log(`Created plugins/${name} (${pkg.name}).`);
 console.log("Next: set a real manifest id/name in src/index.ts, then `pnpm install`.");

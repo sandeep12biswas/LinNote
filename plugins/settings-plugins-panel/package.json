@@ -1,0 +1,26 @@
+{
+  "name": "@linnote/plugin-settings-plugins-panel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Settings > Plugins panel (core.settings.plugins) — declares the settingsPanels contribution listing every plugin's active/disabled/failed state (NTA-10, docs/architecture.md §1.2/§1.4). Rendering waits on a Settings UI shell that doesn't exist yet.",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@linnote/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4",
+    "@vitejs/plugin-react": "^4.6.0",
+    "@linnote/plugin-playground": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  }
+}
