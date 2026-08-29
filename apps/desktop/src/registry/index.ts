@@ -4,19 +4,17 @@
 // types, and the sync layer's providers are all consumers of the same
 // plugin contract (@linnote/plugin-sdk), not special-cased subsystems.
 //
-// This file currently implements NTA-8 only: manifest discovery &
-// dependency-sorted activation order (a pure function — no activate()
-// calls, no filesystem/workspace scanning). Wiring the real plugins/*
-// packages in and actually calling activate()/deactivate() is NTA-9
-// (lifecycle + persisted enable/disable) and NTA-16 (integration).
+// This file implements NTA-8 (manifest discovery & dependency-sorted
+// activation order — a pure function) and NTA-9 (activate()/deactivate()
+// lifecycle + persisted enable/disable, below). Wiring the real
+// plugins/* packages in at app startup is NTA-16 (integration).
 //
-// TODO(phase-1, NTA-9): activate()/deactivate() lifecycle, persisted
-// enable/disable (../persistence/).
 // TODO(phase-1, NTA-10): isolated activate()-throwing failure handling
-// (distinct from the dependency-resolution errors below, which are
+// (distinct from the dependency-resolution errors above, which are
 // detected before any activate() call happens) + Settings > Plugins panel.
 
-import type { Plugin, PluginId } from "@linnote/plugin-sdk";
+import type { Plugin, PluginContext, PluginId } from "@linnote/plugin-sdk";
+import type { PersistenceProvider, PluginSettingsStore } from "../persistence";
 
 export type PluginState = "active" | "disabled" | "failed";
 
@@ -149,4 +147,126 @@ export function resolveActivationOrder(plugins: Plugin[]): ActivationOrderResult
   }
 
   return { order, errors };
+}
+
+/**
+ * The registry only ever needs to read/write the plugin-settings blob,
+ * never the tree/page/asset methods — accepting this narrower slice of
+ * `PersistenceProvider` means a test double only has to implement two
+ * methods, and lets the real `FileSystemPersistenceProvider` (NTA-14,
+ * not built yet) be swapped in later without this file changing at all.
+ */
+export type PluginSettingsPersistence = Pick<PersistenceProvider, "readPluginSettings" | "writePluginSettings">;
+
+export interface PluginRegistryOptions {
+  /** Where enable/disable state (and each plugin's own settings) is persisted. */
+  settingsPersistence: PluginSettingsPersistence;
+  /**
+   * Builds the `PluginContext` handed to activate()/deactivate() for
+   * one plugin. What that context actually does (ctx.commands,
+   * ctx.menu, ...) is out of scope here — the shell/canvas-core work
+   * that backs it lands in other subtasks (NTA-11, NTA-12).
+   */
+  createContext: (pluginId: PluginId) => PluginContext;
+}
+
+/**
+ * Owns plugin lifecycle: activation in dependency order (NTA-8's
+ * `resolveActivationOrder`), and persisted enable/disable (NTA-9). One
+ * instance per app session; `activateAll()` is expected to run once at
+ * startup before `disable`/`enable` are called.
+ */
+export class PluginRegistry {
+  private readonly byId = new Map<PluginId, Plugin>();
+  private readonly states = new Map<PluginId, PluginState>();
+  private settings: PluginSettingsStore = {};
+
+  constructor(
+    private readonly plugins: Plugin[],
+    private readonly options: PluginRegistryOptions,
+  ) {
+    for (const plugin of plugins) this.byId.set(plugin.manifest.id, plugin);
+  }
+
+  /**
+   * Loads persisted settings, marks every plugin `resolveActivationOrder`
+   * excluded as `failed` (a bad dependency graph, not a user's disable
+   * choice), then calls `activate()` on the rest in dependency order —
+   * skipping any whose persisted `enabled` flag is explicitly `false`.
+   * A plugin new to this run (no persisted entry yet) defaults to
+   * enabled and gets a fresh settings entry written back, so it's there
+   * for a future `disable()`/`enable()` call to flip.
+   *
+   * Note: `activate()` is not wrapped in try/catch here — a throwing
+   * plugin currently propagates. Isolated failure handling for that
+   * case is NTA-10, not this subtask.
+   */
+  async activateAll(): Promise<void> {
+    this.settings = await this.options.settingsPersistence.readPluginSettings();
+
+    const { order, errors } = resolveActivationOrder(this.plugins);
+    for (const error of errors) {
+      this.states.set(error.pluginId, "failed");
+    }
+
+    for (const plugin of order) {
+      const id = plugin.manifest.id;
+      const enabled = this.settings[id]?.enabled ?? true;
+      if (!(id in this.settings)) {
+        this.settings[id] = { enabled: true, settings: null };
+      }
+      if (enabled) {
+        await plugin.activate(this.options.createContext(id));
+        this.states.set(id, "active");
+      } else {
+        this.states.set(id, "disabled");
+      }
+    }
+
+    await this.options.settingsPersistence.writePluginSettings(this.settings);
+  }
+
+  /**
+   * Calls `deactivate()` (if the plugin defines one) and persists
+   * `enabled: false`. The plugin's own `settings` blob is left
+   * untouched — re-enabling restores it, per NTA-9's acceptance
+   * criteria — only the `enabled` flag changes.
+   */
+  async disable(pluginId: PluginId): Promise<void> {
+    const plugin = this.requirePlugin(pluginId);
+    await plugin.deactivate?.(this.options.createContext(pluginId));
+    this.states.set(pluginId, "disabled");
+    this.settings[pluginId] = { ...(this.settings[pluginId] ?? { settings: null }), enabled: false };
+    await this.options.settingsPersistence.writePluginSettings(this.settings);
+  }
+
+  /**
+   * Calls `activate()` and persists `enabled: true`. Whatever
+   * `settings` blob the plugin had before being disabled is passed
+   * through unchanged.
+   */
+  async enable(pluginId: PluginId): Promise<void> {
+    const plugin = this.requirePlugin(pluginId);
+    await plugin.activate(this.options.createContext(pluginId));
+    this.states.set(pluginId, "active");
+    this.settings[pluginId] = { ...(this.settings[pluginId] ?? { settings: null }), enabled: true };
+    await this.options.settingsPersistence.writePluginSettings(this.settings);
+  }
+
+  getState(pluginId: PluginId): PluginState | undefined {
+    return this.states.get(pluginId);
+  }
+
+  list(): RegisteredPlugin[] {
+    return this.plugins.map((plugin) => ({
+      plugin,
+      state: this.states.get(plugin.manifest.id) ?? "disabled",
+    }));
+  }
+
+  private requirePlugin(pluginId: PluginId): Plugin {
+    const plugin = this.byId.get(pluginId);
+    if (!plugin) throw new Error(`PluginRegistry: unknown plugin id "${pluginId}"`);
+    return plugin;
+  }
 }
