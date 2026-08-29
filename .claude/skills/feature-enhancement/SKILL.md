@@ -236,4 +236,21 @@ Step 9):
   task/subtask — don't update them reflexively here. If this story completes a phase of work,
   ask the user whether they want those docs updated now.
 - Optionally offer (don't do it unasked) to open a pull request from the pushed feature branch
-  (e.g. via `gh pr create`) targeting the base branch resolved in Step 4.
+  targeting the base branch resolved in Step 4. If the user says yes, use
+  `.claude/skills/feature-enhancement/scripts/create-pr.sh <issue-key> "<PR title>" [base-branch]`,
+  piping the full PR body (Jira link, summary, acceptance-criteria mapping, test results — the
+  same content as Step 8's Jira comment) into it via stdin, e.g.:
+  ```bash
+  .claude/skills/feature-enhancement/scripts/create-pr.sh NTA-9 "Registry plugin lifecycle" <<'EOF'
+  ## Jira
+  [NTA-9](https://sandeep12biswas.atlassian.net/browse/NTA-9)
+  ...
+  EOF
+  ```
+  It refuses to run from `develop`/`main` (a PR must come from the feature branch) and resolves
+  a working `gh` binary itself (the one on `PATH` can be a snap launcher that silently no-ops in
+  a sandboxed environment — the script falls back to the real binary via git's credential-helper
+  config). **Never test this script's `gh pr create` step against the real repo** — it has no
+  dry-run mode, and doing so opens a real PR (this happened once during development; the
+  accidental PR was closed with an explanatory comment). Validate argument handling and the
+  branch guard only, both of which exit before any `gh` call.
