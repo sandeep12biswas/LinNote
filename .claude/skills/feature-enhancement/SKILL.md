@@ -93,29 +93,33 @@ they want changes to scope, update the summary and ask again — don't silently 
 
 Once confirmed, before touching any files, set up an isolated branch for this story — never
 implement directly on top of whatever branch happened to be checked out when the skill started.
+Delegate this to `scripts/create-feature-branch.sh`, which handles base-branch
+resolution/import, the dirty-working-tree guard, and branch creation:
 
-1. **Resolve the base branch**: the git branch name supplied in the input (see Input section)
-   if there was one, otherwise `develop`.
-2. **Import the base branch into the local repo** — it may only exist on `origin` (e.g. another
-   session pushed it, or it was never checked out locally):
-   - `git fetch origin <base-branch>`
-   - If `<base-branch>` has no local ref yet, create one tracking the remote:
-     `git checkout -b <base-branch> origin/<base-branch>`.
-   - If it already exists locally, fast-forward it instead of recreating it:
-     `git checkout <base-branch> && git pull --ff-only origin <base-branch>`.
-   - If the fetch fails because the branch doesn't exist on `origin` either, stop and tell the
-     user — don't silently fall back to `develop` without asking, since they explicitly named a
-     different base.
-3. **Check for uncommitted local changes** (`git status --porcelain`) before switching anything.
-   If there are changes unrelated to this story, stop and ask how to handle them (stash, commit,
-   discard) rather than dragging them onto the new branch unasked.
-4. **Create the feature branch** off the now-local base branch, using a `feature/<slug>` name:
-   `git checkout -b feature/<issue-key-lowercased>[-<short-kebab-slug>] <base-branch>`
-   (e.g. `feature/nta-23-dark-mode-toggle`), using the issue key from Step 1 so the branch is
-   traceable back to the ticket.
-   - If a branch with that name already exists locally, ask the user whether to reuse it (e.g.
-     resuming earlier work on the same story) or pick a different name — don't force-overwrite
-     silently.
+```bash
+scripts/create-feature-branch.sh <issue-key> <short-kebab-slug> [base-branch]
+```
+
+1. **`<issue-key>`** — the resolved key from Step 1 (e.g. `NTA-23`), case-insensitive.
+2. **`<short-kebab-slug>`** — derive a few kebab-case words from the story's summary/title (e.g.
+   a story titled "Add a dark mode toggle to Settings" → `dark-mode-toggle`). Pass `""` if
+   nothing short and meaningful comes out of the title. Don't ask the user for this — derive it
+   yourself from Step 1's fetched summary, the same way you'd write the plain-language summary
+   in Step 2.
+3. **`[base-branch]`** — the git branch name supplied in the input (see Input section) if there
+   was one; omit this argument entirely otherwise, so the script's own default (`develop`)
+   applies.
+
+The script fetches and fast-forwards (or creates a local tracking ref for) the base branch,
+refuses to run against a dirty working tree, and creates
+`feature/<issue-key-lowercased>[-<short-kebab-slug>]` off it — e.g. `feature/nta-23-dark-mode-toggle`.
+
+- If it exits non-zero, **stop and surface its message to the user** rather than working around
+  it — a dirty working tree, a base branch that doesn't exist on `origin`, or a feature branch
+  that already exists locally (it prompts to resume when run in a real terminal; non-interactively
+  it just fails with instructions) all need a human decision, not a silent retry.
+- On success, confirm you're actually on the new branch (`git branch --show-current`) before
+  moving to Step 5 — don't assume the checkout landed just because the script printed a summary.
 
 All implementation work from Step 5 onward happens on this new branch.
 
