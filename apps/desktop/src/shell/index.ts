@@ -15,12 +15,16 @@
 // that whatever active plugins' `menu` contributions it's handed come out
 // correctly grouped, ordered, and nested.
 //
-// TODO(phase-1): toolbar contribution rendering (mirrors buildMenuBar's
-// grouping/sorting approach, once a ToolbarContribution consumer exists).
+// NTA-12 (toolbar rendering) adds `buildToolbar` below, mirroring
+// `buildMenuBar`'s sort convention but simpler: `ToolbarContribution`
+// (unlike `MenuContribution`) has no top-level-menu grouping and no
+// submenu nesting, so it's just active plugins' `toolbar` contributions
+// sorted by `priority` (undeclared last, ties in activation order).
+//
 // TODO(phase-2): Folder Tree pane + Page List pane (§4.1, §5.4), fractional
 // -index drag-to-reorder, breadcrumb trail.
 
-import type { MenuContribution } from "@linnote/plugin-sdk";
+import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { RegisteredPlugin } from "../registry";
 
 /** Canonical left-to-right order of the app's top-level menus (docs/architecture.md §2). */
@@ -130,5 +134,39 @@ function byPriority(a: MenuContribution, b: MenuContribution): number {
   return (a.priority ?? UNDECLARED_PRIORITY) - (b.priority ?? UNDECLARED_PRIORITY);
 }
 
+export interface ToolbarButtonModel {
+  label: string;
+  icon?: string;
+  commandId: string;
+}
+
+export type ToolbarModel = ToolbarButtonModel[];
+
+/**
+ * Flattens `toolbar` contributions from every *active* plugin (§1.2's
+ * isolated failure handling means a `disabled`/`failed` plugin's
+ * contributions never reach the shell) into a single button list, sorted
+ * by `priority` (undeclared last, ties stable in activation order).
+ * Unlike `buildMenuBar`, there's no top-level grouping or submenu
+ * nesting — `ToolbarContribution` doesn't declare either.
+ */
+export function buildToolbar(registeredPlugins: RegisteredPlugin[]): ToolbarModel {
+  const contributions = registeredPlugins
+    .filter((rp) => rp.state === "active")
+    .flatMap((rp) => rp.plugin.manifest.contributes.toolbar ?? []);
+
+  // Array.prototype.sort is stable (ES2019+), so equal-priority
+  // contributions keep their activation order.
+  return [...contributions]
+    .sort((a, b) => (a.priority ?? UNDECLARED_PRIORITY) - (b.priority ?? UNDECLARED_PRIORITY))
+    .map(toButtonModel);
+}
+
+function toButtonModel(contribution: ToolbarContribution): ToolbarButtonModel {
+  return { label: contribution.label, icon: contribution.icon, commandId: contribution.commandId };
+}
+
 export { MenuBar } from "./MenuBar";
 export type { MenuBarProps } from "./MenuBar";
+export { Toolbar } from "./Toolbar";
+export type { ToolbarProps } from "./Toolbar";

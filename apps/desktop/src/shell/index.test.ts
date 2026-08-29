@@ -1,12 +1,26 @@
 import { describe, expect, it } from "vitest";
-import type { MenuContribution } from "@linnote/plugin-sdk";
+import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { PluginState, RegisteredPlugin } from "../registry";
-import { buildMenuBar } from "./index";
+import { buildMenuBar, buildToolbar } from "./index";
 
 function makeRegisteredPlugin(id: string, state: PluginState, menu: MenuContribution[]): RegisteredPlugin {
   return {
     plugin: {
       manifest: { id, name: id, version: "0.1.0", contributes: { menu } },
+      activate: () => {},
+    },
+    state,
+  };
+}
+
+function makeRegisteredPluginWithToolbar(
+  id: string,
+  state: PluginState,
+  toolbar: ToolbarContribution[],
+): RegisteredPlugin {
+  return {
+    plugin: {
+      manifest: { id, name: id, version: "0.1.0", contributes: { toolbar } },
       activate: () => {},
     },
     state,
@@ -124,5 +138,59 @@ describe("buildMenuBar", () => {
 
   it("returns an empty model for no plugins", () => {
     expect(buildMenuBar([])).toEqual([]);
+  });
+});
+
+describe("buildToolbar", () => {
+  it("sorts buttons by priority, undeclared priority last, ties in activation order", () => {
+    const plugin = makeRegisteredPluginWithToolbar("core.format.multi", "active", [
+      { label: "No priority A", commandId: "a" },
+      { label: "High", commandId: "high", priority: 1 },
+      { label: "No priority B", commandId: "b" },
+      { label: "Mid", commandId: "mid", priority: 5 },
+    ]);
+
+    const model = buildToolbar([plugin]);
+
+    expect(model.map((b) => b.commandId)).toEqual(["high", "mid", "a", "b"]);
+  });
+
+  it("keeps ties in activation order across plugins", () => {
+    const first = makeRegisteredPluginWithToolbar("core.a", "active", [{ label: "First", commandId: "first" }]);
+    const second = makeRegisteredPluginWithToolbar("core.b", "active", [{ label: "Second", commandId: "second" }]);
+
+    const model = buildToolbar([first, second]);
+
+    expect(model.map((b) => b.commandId)).toEqual(["first", "second"]);
+  });
+
+  it("excludes contributions from disabled and failed plugins", () => {
+    const active = makeRegisteredPluginWithToolbar("core.format.bold", "active", [
+      { label: "Bold", commandId: "applyBold" },
+    ]);
+    const disabled = makeRegisteredPluginWithToolbar("core.format.italic", "disabled", [
+      { label: "Italic", commandId: "applyItalic" },
+    ]);
+    const failed = makeRegisteredPluginWithToolbar("core.format.underline", "failed", [
+      { label: "Underline", commandId: "applyUnderline" },
+    ]);
+
+    const model = buildToolbar([active, disabled, failed]);
+
+    expect(model).toEqual([{ label: "Bold", icon: undefined, commandId: "applyBold" }]);
+  });
+
+  it("carries the icon through when declared", () => {
+    const plugin = makeRegisteredPluginWithToolbar("core.format.bold", "active", [
+      { label: "Bold", icon: "bold-icon", commandId: "applyBold" },
+    ]);
+
+    const model = buildToolbar([plugin]);
+
+    expect(model).toEqual([{ label: "Bold", icon: "bold-icon", commandId: "applyBold" }]);
+  });
+
+  it("returns an empty model for no plugins", () => {
+    expect(buildToolbar([])).toEqual([]);
   });
 });
