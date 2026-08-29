@@ -1,0 +1,16 @@
+{
+  "name": "@linnote/plugin-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public contract every LinNote plugin builds against: PluginManifest, Plugin, PluginContext, and the extension-point contribution types. Mirrors Desing architecture §3.1-§3.3. Written to eventually publish standalone once third-party plugins are supported (§3.5, Plugins §9).",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3"
+  }
+}

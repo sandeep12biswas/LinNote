@@ -51,23 +51,31 @@ beyond what's needed to sanity-check feasibility. Cover:
 
 - **What's being asked**, in your own words (don't just paste the Jira description back).
 - **Where it likely lands** in this codebase's layers — see the Architecture section of
-  `CLAUDE.md`. This repo is three independent build units, not one layered app:
-  - `src/` — the React/TypeScript frontend (`components/`, `store/` (Zustand), `lib/tauri.ts`).
-  - `src-tauri/src/` — the Tauri (Rust) app shell, itself a pipeline: `db` (SQLite/FTS5) →
-    `sync` (Automerge CRDT) → `plugins` (Extism WASM) → `ocr` (Tesseract) → `ai` (Ollama) →
-    `commands` (the `invoke()` surface exposed to the frontend).
-  - `server/` — the optional self-hosted sync server (Axum), a separate crate, not bundled
-    with the desktop app.
+  `CLAUDE.md`. This is a pnpm + Turborepo workspace, one package per plugin, not a flat app:
+  - `apps/desktop/src/` — the React/TypeScript frontend: `shell/` (menu, toolbar, panes),
+    `registry/` (plugin lifecycle), `canvas-core/` (viewport, undo/redo), `persistence/`
+    (the `PersistenceProvider` interface), `store/` (Zustand), `lib/tauri.ts` (typed
+    `invoke()` wrappers for the rare custom Rust command).
+  - `apps/desktop/src-tauri/` — the Tauri v2 (Rust) app shell. Per `docs/architecture.md` §8,
+    **no bespoke native Rust code is required for v1** — persistence and file/link opening go
+    through standard Tauri plugins (`plugin-fs`, `plugin-shell`) called directly from
+    TypeScript, not through custom `#[tauri::command]`s.
+  - `packages/` — shared, non-plugin code: `plugin-sdk` (the `Plugin`/`PluginManifest`/
+    `PluginContext` contract), `plugin-playground` (isolated-dev harness), `contrast-util`,
+    `rich-text-engine` (shared TipTap wrapper).
+  - `plugins/` — one package per feature (`@linnote/plugin-<name>`): formatting commands
+    (`format-*`), canvas element types (`element-*`), cloud-sync providers (`sync-onedrive`,
+    `sync-google-drive`). A new feature is very often a new `plugins/*` package, not a change
+    inside `apps/desktop/`.
   This is a quick read of the ticket against that layering, not a full design doc.
 - **Anything ambiguous or underspecified** in the story — acceptance criteria that seem to
   contradict the plan in `docs/architecture.md`, missing detail on edge cases, or scope that
   seems bigger than a single story. Ask about these now, before the confirmation step, if
   they'd change what "done" means.
-- Check `docs/architecture.md` (phase breakdown and tech-stack choices) and `CLAUDE.md`
-  (architecture/module-boundary notes, e.g. the `notebooks → sections → pages → blocks` data
-  model and the frontend-only-talks-via-IPC rule) for anything relevant to the feature — flag it
-  if the story looks like it conflicts with an existing decision, rather than silently
-  overriding it.
+- Check `docs/architecture.md` (plugin architecture, data model, phase breakdown) and
+  `CLAUDE.md` (module-boundary notes, e.g. the `WorkspaceNode`/`NotePage`/`CanvasElement` data
+  model and the plugin-isolation rule) for anything relevant to the feature — flag it if the
+  story looks like it conflicts with an existing decision, rather than silently overriding it.
 
 ## Step 3 — Confirm before starting (hard gate)
 
@@ -115,51 +123,61 @@ All implementation work from Step 5 onward happens on this new branch.
 
 Once the branch is set up, implement the change following this repo's rules from `CLAUDE.md`:
 
-- Respect the module boundaries: the frontend (`src/`) never talks to SQLite, the sync engine,
-  OCR, or AI directly — every capability crosses the Tauri IPC boundary through
-  `src/lib/tauri.ts`. Adding a capability means: a `#[tauri::command]` fn in
-  `src-tauri/src/commands/mod.rs`, registered in the `generate_handler![...]` list in
-  `src-tauri/src/lib.rs`, wrapped by a typed function in `src/lib/tauri.ts` that components
-  call — never `invoke()` directly from a component.
-- `server/` is a separate deployable from `src-tauri/` (different crate, different
-  `Cargo.toml`, deployed via `server/docker-compose.yml`) — a sync-server change doesn't touch
-  the desktop app's build, and vice versa.
-- Keep the two sides of the data model in sync: `src/types/index.ts` (the `Block` union) and
-  `src-tauri/src/db/schema.rs` (the SQLite schema) both encode
-  `notebooks → sections → pages → blocks` — update both together if block types or the schema
-  change.
-- There is no automated architecture-boundary test in this repo yet (unlike a project with a
-  `test_architecture_boundaries.py`), so a layering violation won't fail a build — be
-  deliberate about it yourself, and call it out in the Step 9 summary if you had to reach across
-  a boundary for a good reason.
+- **Plugin isolation is the primary rule now.** A `plugins/*` package may depend only on
+  `@linnote/plugin-sdk` and on any other plugin it lists explicitly in its manifest's
+  `dependencies` — never by importing another plugin's source directly. If the story is "add a
+  new formatting command / canvas element type / sync provider," it's very likely a new
+  `plugins/*` package (`pnpm create-plugin <kebab-case-name>`, see `docs/architecture.md`
+  §10), not a change bolted onto an existing one. Run `pnpm lint:boundaries`
+  (`dependency-cruiser`) after touching `plugins/*` — it fails the build on a cross-plugin
+  source import, so a violation should be visible before you even get to Step 6.
+- Respect the persistence boundary: `apps/desktop/src/persistence/` (the `PersistenceProvider`
+  interface) is the only thing that talks to `@tauri-apps/plugin-fs`; everything else goes
+  through it. Native Rust is the exception, not the default — per `docs/architecture.md` §8, add
+  a `#[tauri::command]` only when a capability genuinely needs it: fn in
+  `apps/desktop/src-tauri/src/commands/mod.rs`, registered in the `generate_handler![...]` list
+  in `apps/desktop/src-tauri/src/lib.rs`, wrapped by a typed function in
+  `apps/desktop/src/lib/tauri.ts` that components call — never `invoke()` directly.
+- Keep the data model in sync: `apps/desktop/src/types/index.ts` (`WorkspaceNode`, `NotePage`,
+  `CanvasElement` union) is the one place this is defined — there is no separate Rust schema to
+  keep in step with it (v1 persistence is flat JSON, not SQLite). Update
+  `docs/architecture.md` §3-§4 alongside it if the shape of a canvas element or the tree node
+  changes.
 - Keep the change scoped to what was confirmed in step 3. If while implementing you discover the
-  story needs more than expected (e.g. a schema/migration change nobody flagged), stop and check
-  with the user rather than expanding scope unilaterally.
+  story needs more than expected (e.g. a new package boundary or a data-model change nobody
+  flagged), stop and check with the user rather than expanding scope unilaterally.
 - Follow existing patterns in the touched files rather than introducing a new style: the
-  `TODO(phase-N)` comment convention tying stub code back to a plan phase, one Zustand store per
-  concern in `src/store/`, one feature folder per block/UI concern under `src/components/`, one
-  Rust module per pipeline stage under `src-tauri/src/`.
+  `TODO(phase-N)` comment convention tying stub code back to a plan phase (see
+  `docs/architecture.md` §9 for the phase list), one Zustand store per concern in
+  `apps/desktop/src/store/`, one plugin package per feature under `plugins/*` (copy
+  `plugins/_template`'s shape: `package.json`, `src/index.ts`, `src/index.test.ts`,
+  `playground.tsx`), one Rust module per genuine native need under `apps/desktop/src-tauri/src/`.
 
 ## Step 6 — Testing
 
-There is no test runner configured in this repo yet (`package.json` has no `test` script, and
-no `#[cfg(test)]` modules exist under `src-tauri/` or `server/`). What to do depends on what you
-touched and what already exists by the time this runs — check first, don't assume:
+Vitest is already configured workspace-wide (each `plugins/*`/`packages/*` package has its own
+`test` script; every plugin scaffold ships a `src/index.test.ts` manifest-id smoke test) and
+`rustc`/`cargo` **are installed** in this sandbox — verify with `cargo -V` rather than assuming
+either fact from an older note. What to actually run depends on what you touched:
 
-1. **Frontend changes (`src/`)**: run `npx tsc --noEmit` — this is currently the only enforced
-   check. If the change is meaningfully testable (a store, a non-trivial component) and no test
-   runner exists yet, add Vitest (`npm install -D vitest`, plus a `"test": "vitest run"` script
-   in `package.json`) and write the test co-located as `<file>.test.ts(x)`. If Vitest (or another
-   runner) already exists by the time you read this, follow its existing convention instead of
-   introducing a second one.
-2. **Rust changes (`src-tauri/` or `server/`)**: write idiomatic `#[cfg(test)] mod tests { ... }`
-   inline in the touched module, and run `cargo test` from that crate's directory
-   (`src-tauri/` or `server/`).
-   - This environment may not have `rustc`/`cargo` installed (see `CLAUDE.md`). If so, say
-     plainly that the Rust tests were written but could not be compiled or run here — don't
-     claim they passed. Ask the user to run `cargo test` where Rust is installed, or offer to do
-     it if a Rust toolchain becomes available.
-3. Run whatever suite(s) apply and report the actual pass/fail output — don't stop at "the new
+1. **TypeScript changes anywhere in the workspace**: run `pnpm typecheck` (turbo: `tsc --noEmit`
+   across every package) — this is the baseline enforced check. If you touched `plugins/*`, also
+   run `pnpm lint:boundaries` (dependency-cruiser plugin-isolation check).
+2. **A plugin package (`plugins/*`) or shared package (`packages/*`)**: run its tests with
+   `pnpm --filter <package-name> test` (e.g. `pnpm --filter @linnote/plugin-format-bold test`).
+   Extend the existing `src/index.test.ts` rather than starting a new file, unless the change
+   genuinely needs more than one test file's worth of coverage. If the change is meaningfully
+   testable and the scaffolded smoke test is all that exists, add real assertions to it (or a
+   sibling `*.test.ts`) using the same Vitest convention — don't introduce a different runner.
+3. **`apps/desktop` changes**: `pnpm --filter desktop typecheck` and, if the change is in
+   `src/`, `pnpm --filter desktop build` (`tsc -b && vite build`) to confirm the Vite build
+   still succeeds.
+4. **Rust changes (`apps/desktop/src-tauri/`)**: write idiomatic `#[cfg(test)] mod tests { ... }`
+   inline in the touched module, and run `cargo check` and `cargo test` from
+   `apps/desktop/src-tauri/`. Report the actual output — if a future environment genuinely lacks
+   a Rust toolchain, say so plainly and don't claim the tests passed, but don't assume that's the
+   case here without checking (`cargo -V`) first.
+5. Run whatever suite(s) apply and report the actual pass/fail output — don't stop at "the new
    test passes" if other tests in the same runner could have been affected, and don't claim a
    suite is green without having actually run it.
 
@@ -206,7 +224,8 @@ Step 9):
 - Summarize what changed: files touched, and a one-line mapping back to the story's acceptance
   criteria (does each point from the ticket have a corresponding change?).
 - Report the final test run result verbatim (counts, not just "tests pass"; note explicitly if
-  any Rust tests were written but couldn't be run in this environment).
+  a Rust toolchain genuinely wasn't available to run tests written in `src-tauri/` — don't
+  assume that's the case without checking `cargo -V` first).
 - `docs/architecture.md` and `README.md` get updated per *phase* (NTA-1 … NTA-6, per `CLAUDE.md`'s
   "Project tracking" section), not per individual task/story — don't update them reflexively
   here. If this story completes a phase of work, ask the user whether they want those docs

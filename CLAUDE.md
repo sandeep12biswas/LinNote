@@ -5,105 +5,136 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 LinNote — a cross-platform OneNote alternative built with Tauri v2 + React
-19 + TypeScript, targeting Linux (primary) and Windows. Offline-first,
-self-hostable sync, local AI via Ollama. Full plan, tech-stack rationale,
-and phase breakdown live in `docs/architecture.md` — read it before
-making architectural decisions, since most of the codebase is currently
-stubs that exist to hold that plan's shape.
+19 + TypeScript, targeting Linux (primary) and Windows. Rebuilt around a
+**plugin-first architecture**: formatting commands, canvas element types,
+and cloud-sync providers are each an independent plugin package, not
+hardcoded shell features. Full plan, tool inventory, and phase breakdown
+live in `docs/architecture.md` — **read it before making architectural
+decisions.** It mirrors two Notion pages ("Desing architecture" v2.2 and
+"Plugins" v1.1) and supersedes an earlier draft that mentioned Excalidraw,
+BlockNote, Extism, Automerge/CRDT sync, a self-hosted sync server, OCR,
+and local AI via Ollama — **none of that is part of the current design.**
+If you see those terms anywhere else in this repo, they're stale.
+
+## Repo shape: pnpm workspace, not a flat app
+
+This is a **pnpm + Turborepo monorepo**, one package per plugin, per
+`docs/architecture.md`'s "Repository shape & tooling" section:
+
+```
+apps/desktop/      the Tauri v2 app (shell, registry, canvas-core, persistence)
+packages/          shared, non-plugin code: plugin-sdk, plugin-playground,
+                   contrast-util, rich-text-engine
+plugins/           one package per feature — _template plus 15 core.* plugins
+```
+
+`npm` will not work correctly here — cross-package dependencies are
+declared as `workspace:*` and only pnpm resolves those to the local
+copies. **pnpm is required**, not merely assumed.
 
 ## Commands
 
-Package manager is npm (`package-lock.json` is committed; `pnpm` is what
-the plan doc assumes but isn't installed in this environment — either
-works, don't mix lockfiles).
-
 ```bash
-npm install              # install frontend deps
-npm run dev               # vite dev server only (frontend, no Tauri window)
-npm run tauri dev         # full app: Tauri window + vite dev server (needs Rust + Tauri Linux deps)
-npm run build              # tsc typecheck + vite build
-npx tsc --noEmit           # typecheck only, no build output
+pnpm install                                        # install every workspace package's deps
+pnpm dev                                             # vite dev server for the desktop app only
+pnpm tauri dev                                       # full app: Tauri window + vite dev server
+pnpm --filter @linnote/plugin-format-bold dev        # one plugin, in isolation (no Tauri, no other plugins)
+pnpm build                                           # turbo: build every package that needs it
+pnpm typecheck                                       # tsc --noEmit across the whole workspace
+pnpm lint:boundaries                                 # dependency-cruiser: fails if a plugin imports another plugin's source
+pnpm test                                            # vitest across every package
+pnpm create-plugin <kebab-case-name>                 # scaffold a new plugins/* package from plugins/_template
 ```
 
-There is no test suite yet, and no lint config yet — don't assume
-`npm test` or `npm run lint` exist; check `package.json` first if this
-changes.
+If `pnpm`/`turbo` aren't on `PATH`, see `docs/architecture.md`'s "Install
+sequence" — this sandbox has them under `~/.npm-global/bin` (installed via
+a user-local npm prefix, since Corepack couldn't symlink into `/usr/bin`
+without root).
 
-The Rust side (`src-tauri/`, `server/`) requires `rustc`/`cargo`, which
-are **not installed** in this sandbox. Frontend-only changes can be
-verified with `npx tsc --noEmit`; Rust changes cannot be compiled or
-tested here — say so rather than claiming a build passed.
+There is no lint config yet beyond the dependency-boundary check above —
+don't assume `pnpm lint` covers anything more; check the relevant
+`package.json` first if this changes. Test coverage is a smoke-test stub
+(one manifest-id assertion) per plugin scaffold — don't claim real test
+coverage exists.
+
+**Rust/Tauri**: `rustc`/`cargo` **are installed** in this sandbox (verify
+with `cargo -V` — don't assume otherwise) and `cargo check` in
+`apps/desktop/src-tauri/` succeeds, including with `tauri-plugin-fs` and
+`tauri-plugin-shell` as dependencies. The Linux Tauri system libraries
+(`libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`,
+`librsvg2-dev`) are also already present — confirm with `dpkg -s
+<package>` before claiming a fresh-machine gap. If a future environment
+genuinely lacks the Rust toolchain, say so plainly rather than assuming
+this note still applies.
 
 ```bash
-# src-tauri/: the desktop app's Rust backend
-cd src-tauri && cargo build
-cd src-tauri && cargo check
-
-# server/: optional self-hosted sync server, a separate crate
-cd server && cargo build
-cd server && docker compose up   # runs server + Postgres + MinIO
+cd apps/desktop/src-tauri && cargo check    # or cargo build
 ```
-
-Linux build prerequisites for Tauri (see `docs/architecture.md`):
-`libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev`.
 
 ## Architecture
 
-Three independent build units, not a monorepo workspace:
+Three kinds of workspace package, not a monorepo of unrelated apps:
 
-- **`src/`** — React frontend, built by Vite, dev server fixed on port
-  1420 (Tauri expects this — see `vite.config.ts`/`tauri.conf.json`).
-- **`src-tauri/`** — the desktop app shell (Rust). Compiles to the native
-  binary; the frontend is embedded as `frontendDist` after `npm run build`.
-- **`server/`** — optional self-hosted sync server (Axum), a *separate*
-  Rust crate deployed independently via `server/docker-compose.yml`. Not
-  built or bundled with the desktop app.
+- **`apps/desktop/`** — the Tauri v2 desktop app. `src/` is the React
+  frontend (Vite dev server fixed on port 1420 — Tauri expects this, see
+  `vite.config.ts`/`src-tauri/tauri.conf.json`); `src-tauri/` is the Rust
+  shell that compiles to the native binary, embedding the built frontend
+  as `frontendDist`.
+- **`packages/`** — shared code with no plugin manifest of its own:
+  `plugin-sdk` (the `Plugin`/`PluginManifest`/`PluginContext` contract
+  every plugin and the registry build against), `plugin-playground` (the
+  harness that boots one plugin standalone), `contrast-util` (WCAG
+  contrast), `rich-text-engine` (the shared TipTap wrapper).
+- **`plugins/`** — one package per feature, each `@linnote/plugin-<name>`,
+  each implementing `Plugin` from `@linnote/plugin-sdk`. **A plugin may
+  depend only on `@linnote/plugin-sdk` and any other plugin it lists
+  explicitly in its manifest's `dependencies`** — never by importing
+  another plugin's source. `pnpm lint:boundaries` enforces this in CI;
+  don't add a cross-plugin import that bypasses it.
 
 ### Data flow / module boundaries
 
-Frontend never talks to SQLite/sync/OCR/AI directly — everything crosses
-the Tauri IPC boundary through `src/lib/tauri.ts`, which wraps
-`@tauri-apps/api`'s `invoke()`. When adding a capability:
+`apps/desktop/src/`:
 
-1. Add a `#[tauri::command]` fn in `src-tauri/src/commands/mod.rs`.
-2. Register it in the `tauri::generate_handler![...]` list in
-   `src-tauri/src/lib.rs`.
-3. Add a typed wrapper in `src/lib/tauri.ts` — components call that, never
-   `invoke()` directly.
+- `shell/` — menu bar, toolbar, Folder Tree pane, Page List pane; renders
+  `menu`/`toolbar` contributions from the registry.
+- `registry/` — plugin lifecycle: manifest read, dependency-sorted
+  `activate()`, enable/disable, isolated failure handling (one broken
+  plugin never takes the app down).
+- `canvas-core/` — per-open-page viewport transform and the undo/redo
+  command stack shared across every plugin's mutating action.
+- `persistence/` — the `PersistenceProvider` interface. **v1 talks to
+  `@tauri-apps/plugin-fs` directly from TypeScript** (flat JSON: `tree.json`,
+  `pages/<id>.json`, `assets/<id>/...`) — there is deliberately no Rust
+  `db` module for this. A future `SqlitePersistenceProvider` (via
+  `tauri-plugin-sql`) is a drop-in replacement behind the same interface,
+  not built yet.
+- `lib/tauri.ts` — typed `invoke()` wrappers, for the rare custom
+  `#[tauri::command]`. Per §8 of `docs/architecture.md`, **no bespoke
+  native Rust code is required for v1** — most capabilities go through
+  standard Tauri plugins (`plugin-fs`, `plugin-shell`) called directly
+  from TypeScript, not through a custom command. When a capability
+  genuinely does need one:
+  1. Add a `#[tauri::command]` fn in `apps/desktop/src-tauri/src/commands/mod.rs`.
+  2. Register it in the `tauri::generate_handler![...]` list in
+     `apps/desktop/src-tauri/src/lib.rs`.
+  3. Add a typed wrapper in `apps/desktop/src/lib/tauri.ts` — components
+     call that, never `invoke()` directly.
 
-`src-tauri/src/` module layout mirrors the pipeline in
-`docs/architecture.md`: `db` (SQLite/FTS5) → `sync` (Automerge CRDT) →
-`plugins` (Extism WASM) → `ocr` (Tesseract) → `ai` (Ollama) →
-`commands` (the IPC surface). Each module is currently a stub with
-`TODO(phase-N)` comments tying it to a project phase — check
-`src-tauri/src/db/schema.rs` for the canonical data model before adding
-storage code elsewhere.
-
-Data hierarchy (drives both the SQLite schema and the frontend types):
-`notebooks → sections → pages → blocks`. `Block` is a discriminated union
-by `type` (`text | heading | image | checklist | table | code | divider |
-canvas`) — see `src/types/index.ts` and
-`src-tauri/src/db/schema.rs` for the two sides of this contract; keep
-them in sync when block types change.
-
-Frontend feature folders under `src/components/` (`editor/`, `canvas/`,
-`sidebar/`, `search/`) are currently empty placeholders — one per planned
-phase (rich editor, Excalidraw canvas, react-arborist tree, cmdk search).
-State lives in `src/store/` (Zustand, one small store per concern, not a
-single global store).
-
-### Sync model
-
-Sync is CRDT-based (Automerge), not client-server REST: each page is a
-CRDT document that merges conflict-free on reconnect, either
-peer-to-peer or via `server/`'s WebSocket API. `server/` persists sync
-state/metadata to Postgres and attachments to MinIO/S3 — it is a relay
-and durability layer, not the source of truth (the client's local SQLite
-is).
+Data hierarchy: `WorkspaceNode` tree (notebooks → folders → pages, an
+adjacency list — navigation metadata only) is joined by id to `NotePage`
+(content: header, background, `elements: CanvasElement[]`). `elements` is
+an **open, plugin-extensible union** — whatever the active
+`canvasElementTypes` contributions register (`SegmentBlock`, `InkStroke`,
+`ImageElement`, `FileAttachment`, `YouTubeEmbed` today) — not a fixed
+enum. See `apps/desktop/src/types/index.ts` for the current shape and
+`docs/architecture.md` §3-§4 for the design; keep both in sync when the
+model changes.
 
 ## Project tracking
 
 Work is tracked in Jira project **NTA** (Note Taking App), issues NTA-1
-through NTA-6, one per phase in `docs/architecture.md`. When picking up
-work, check which phase/issue it belongs to and keep the `TODO(phase-N)`
-comment convention when adding new stub code.
+through NTA-6, one per phase in `docs/architecture.md`'s "Phased
+implementation plan" (§9). When picking up work, check which phase/issue
+it belongs to and keep the `TODO(phase-N)` comment convention already
+used throughout `plugins/*` and `apps/desktop/src/*` stub code.

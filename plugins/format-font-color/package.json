@@ -1,0 +1,28 @@
+{
+  "name": "@linnote/plugin-format-font-color",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Font Color plugin (core.format.font-color). Text color mark; uses @linnote/contrast-util (core.util.contrast) for its default suggestion — an explicit dependency, NOT a dependency on format-font-size (Desing architecture §6.1, §8.2).",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@linnote/plugin-sdk": "workspace:*",
+    "@linnote/rich-text-engine": "workspace:*",
+    "@linnote/contrast-util": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4",
+    "@vitejs/plugin-react": "^4.6.0",
+    "@linnote/plugin-playground": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  }
+}
