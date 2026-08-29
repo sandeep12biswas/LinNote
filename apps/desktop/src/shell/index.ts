@@ -21,6 +21,11 @@
 // submenu nesting, so it's just active plugins' `toolbar` contributions
 // sorted by `priority` (undeclared last, ties in activation order).
 //
+// NTA-13 (static 4-region layout) adds `AppShell` (./AppShell.tsx), which
+// composes `MenuBar` and `Toolbar` with static Folder Tree / Page List /
+// Editor Canvas placeholder panes into the full layout from §2 — `App.tsx`
+// just renders it.
+//
 // TODO(phase-2): Folder Tree pane + Page List pane (§4.1, §5.4), fractional
 // -index drag-to-reorder, breadcrumb trail.
 
@@ -170,3 +175,4 @@ export { MenuBar } from "./MenuBar";
 export type { MenuBarProps } from "./MenuBar";
 export { Toolbar } from "./Toolbar";
 export type { ToolbarProps } from "./Toolbar";
+export { AppShell } from "./AppShell";
