@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
-import type { Plugin, PluginManifest } from "@linnote/plugin-sdk";
-import { resolveActivationOrder } from "./index";
+import { describe, expect, it, vi } from "vitest";
+import type { Plugin, PluginContext, PluginManifest } from "@linnote/plugin-sdk";
+import type { PluginSettingsPersistence } from "./index";
+import type { PluginSettingsStore } from "../persistence";
+import { PluginRegistry, resolveActivationOrder } from "./index";
 
-function makePlugin(id: string, dependencies?: Record<string, string>): Plugin {
+function makePlugin(
+  id: string,
+  dependencies?: Record<string, string>,
+  overrides: Partial<Pick<Plugin, "activate" | "deactivate">> = {},
+): Plugin {
   const manifest: PluginManifest = {
     id,
     name: id,
@@ -10,7 +16,27 @@ function makePlugin(id: string, dependencies?: Record<string, string>): Plugin {
     dependencies,
     contributes: {},
   };
-  return { manifest, activate: () => {} };
+  return { manifest, activate: overrides.activate ?? (() => {}), deactivate: overrides.deactivate };
+}
+
+function makeContext(): PluginContext {
+  return {
+    commands: { register: () => {}, run: () => undefined },
+    menu: { addItem: () => {} },
+    canvas: { registerElementType: () => {} },
+    storage: { get: async () => undefined, set: async () => {} },
+    events: { on: () => {}, emit: () => {} },
+  };
+}
+
+function makeFakePersistence(initial: PluginSettingsStore = {}): PluginSettingsPersistence {
+  let store: PluginSettingsStore = JSON.parse(JSON.stringify(initial));
+  return {
+    readPluginSettings: async () => JSON.parse(JSON.stringify(store)),
+    writePluginSettings: async (next) => {
+      store = JSON.parse(JSON.stringify(next));
+    },
+  };
 }
 
 describe("resolveActivationOrder", () => {
@@ -83,5 +109,124 @@ describe("resolveActivationOrder", () => {
 
   it("returns an empty result for an empty input", () => {
     expect(resolveActivationOrder([])).toEqual({ order: [], errors: [] });
+  });
+});
+
+describe("PluginRegistry", () => {
+  it("activates every plugin in dependency order and persists a fresh settings entry for each", async () => {
+    const calls: string[] = [];
+    const a = makePlugin("a", undefined, { activate: () => void calls.push("a") });
+    const b = makePlugin("b", { a: "^1" }, { activate: () => void calls.push("b") });
+    const persistence = makeFakePersistence();
+
+    const registry = new PluginRegistry([b, a], {
+      settingsPersistence: persistence,
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+
+    expect(calls).toEqual(["a", "b"]);
+    expect(registry.getState("a")).toBe("active");
+    expect(registry.getState("b")).toBe("active");
+    await expect(persistence.readPluginSettings()).resolves.toEqual({
+      a: { enabled: true, settings: null },
+      b: { enabled: true, settings: null },
+    });
+  });
+
+  it("skips activate() for a plugin persisted as disabled", async () => {
+    const activate = vi.fn();
+    const plugin = makePlugin("a", undefined, { activate });
+    const persistence = makeFakePersistence({ a: { enabled: false, settings: { theme: "dark" } } });
+
+    const registry = new PluginRegistry([plugin], {
+      settingsPersistence: persistence,
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+
+    expect(activate).not.toHaveBeenCalled();
+    expect(registry.getState("a")).toBe("disabled");
+  });
+
+  it("marks a plugin excluded by resolveActivationOrder as failed, not disabled", async () => {
+    const activate = vi.fn();
+    const broken = makePlugin("broken", { "does.not.exist": "^1" }, { activate });
+    const registry = new PluginRegistry([broken], {
+      settingsPersistence: makeFakePersistence(),
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+
+    expect(activate).not.toHaveBeenCalled();
+    expect(registry.getState("broken")).toBe("failed");
+  });
+
+  it("disable() calls deactivate(), persists enabled:false, and preserves the settings blob", async () => {
+    const deactivate = vi.fn();
+    const plugin = makePlugin("a", undefined, { deactivate });
+    const persistence = makeFakePersistence();
+    const registry = new PluginRegistry([plugin], {
+      settingsPersistence: persistence,
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+
+    await registry.disable("a");
+
+    expect(deactivate).toHaveBeenCalledTimes(1);
+    expect(registry.getState("a")).toBe("disabled");
+    await expect(persistence.readPluginSettings()).resolves.toEqual({
+      a: { enabled: false, settings: null },
+    });
+  });
+
+  it("enable() calls activate() again and restores the plugin's prior settings blob", async () => {
+    const activate = vi.fn();
+    const plugin = makePlugin("a", undefined, { activate });
+    const persistence = makeFakePersistence({ a: { enabled: false, settings: { theme: "dark" } } });
+    const registry = new PluginRegistry([plugin], {
+      settingsPersistence: persistence,
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+    expect(activate).not.toHaveBeenCalled();
+
+    await registry.enable("a");
+
+    expect(activate).toHaveBeenCalledTimes(1);
+    expect(registry.getState("a")).toBe("active");
+    // The `settings: { theme: "dark" }` blob from before is untouched —
+    // only the `enabled` flag flipped.
+    await expect(persistence.readPluginSettings()).resolves.toEqual({
+      a: { enabled: true, settings: { theme: "dark" } },
+    });
+  });
+
+  it("throws from disable()/enable() for an unknown plugin id", async () => {
+    const registry = new PluginRegistry([makePlugin("a")], {
+      settingsPersistence: makeFakePersistence(),
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+
+    await expect(registry.disable("does.not.exist")).rejects.toThrow(/unknown plugin/);
+    await expect(registry.enable("does.not.exist")).rejects.toThrow(/unknown plugin/);
+  });
+
+  it("list() reflects every plugin's current state", async () => {
+    const a = makePlugin("a");
+    const b = makePlugin("b");
+    const registry = new PluginRegistry([a, b], {
+      settingsPersistence: makeFakePersistence(),
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+    await registry.disable("b");
+
+    expect(registry.list()).toEqual([
+      { plugin: a, state: "active" },
+      { plugin: b, state: "disabled" },
+    ]);
   });
 });
