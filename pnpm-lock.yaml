@@ -566,6 +566,31 @@ importers:
         specifier: ^7.0.4
         version: 7.3.6
 
+  plugins/settings-plugins-panel:
+    dependencies:
+      '@linnote/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+    devDependencies:
+      '@linnote/plugin-playground':
+        specifier: workspace:*
+        version: link:../../packages/plugin-playground
+      '@vitejs/plugin-react':
+        specifier: ^4.6.0
+        version: 4.7.0(vite@7.3.6)
+      react:
+        specifier: ^19.1.0
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.8(react@19.2.8)
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^7.0.4
+        version: 7.3.6
+
   plugins/sync-google-drive:
     dependencies:
       '@linnote/plugin-sdk':

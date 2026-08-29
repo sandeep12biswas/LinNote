@@ -229,4 +229,105 @@ describe("PluginRegistry", () => {
       { plugin: b, state: "disabled" },
     ]);
   });
+
+  it("marks a plugin whose activate() throws as failed, without stopping the rest from activating", async () => {
+    const boom = new Error("boom");
+    const broken = makePlugin("broken", undefined, {
+      activate: () => {
+        throw boom;
+      },
+    });
+    const healthyActivate = vi.fn();
+    const healthy = makePlugin("healthy", undefined, { activate: healthyActivate });
+
+    const registry = new PluginRegistry([broken, healthy], {
+      settingsPersistence: makeFakePersistence(),
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+
+    expect(registry.getState("broken")).toBe("failed");
+    expect(registry.getFailureReason("broken")).toBe(boom);
+    expect(registry.getState("healthy")).toBe("active");
+    expect(healthyActivate).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a plugin whose activate() rejects (async throw) as failed the same way", async () => {
+    const boom = new Error("async boom");
+    const broken = makePlugin("broken", undefined, { activate: async () => { throw boom; } });
+    const registry = new PluginRegistry([broken], {
+      settingsPersistence: makeFakePersistence(),
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+
+    expect(registry.getState("broken")).toBe("failed");
+    expect(registry.getFailureReason("broken")).toBe(boom);
+  });
+
+  it("exposes the ResolutionError as the failure reason for a bad-dependency plugin", async () => {
+    const broken = makePlugin("broken", { "does.not.exist": "^1" });
+    const registry = new PluginRegistry([broken], {
+      settingsPersistence: makeFakePersistence(),
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+
+    expect(registry.getState("broken")).toBe("failed");
+    expect(registry.getFailureReason("broken")).toEqual({
+      pluginId: "broken",
+      reason: "missing-dependency",
+      detail: expect.stringContaining("does.not.exist"),
+    });
+  });
+
+  it("re-enabling a failed plugin that now succeeds clears its failure reason", async () => {
+    let shouldThrow = true;
+    const plugin = makePlugin("a", undefined, {
+      activate: () => {
+        if (shouldThrow) throw new Error("still broken");
+      },
+    });
+    const registry = new PluginRegistry([plugin], {
+      settingsPersistence: makeFakePersistence(),
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+    expect(registry.getState("a")).toBe("failed");
+    expect(registry.getFailureReason("a")).toBeInstanceOf(Error);
+
+    shouldThrow = false;
+    await registry.enable("a");
+
+    expect(registry.getState("a")).toBe("active");
+    expect(registry.getFailureReason("a")).toBeUndefined();
+    // Persisted intent is enabled:true even though it was failed before —
+    // "failed" is a transient runtime state, not the user's persisted choice.
+    await expect(registry.list()).toBeDefined();
+  });
+
+  it("enable() catches a throw instead of propagating it, and still persists enabled:true", async () => {
+    const boom = new Error("nope");
+    const plugin = makePlugin("a", undefined, { activate: () => {} });
+    const persistence = makeFakePersistence({ a: { enabled: false, settings: null } });
+    const registry = new PluginRegistry([plugin], {
+      settingsPersistence: persistence,
+      createContext: makeContext,
+    });
+    await registry.activateAll();
+    expect(registry.getState("a")).toBe("disabled");
+
+    // Swap in a throwing activate() to exercise enable()'s own try/catch,
+    // independent of activateAll()'s.
+    plugin.activate = () => {
+      throw boom;
+    };
+    await expect(registry.enable("a")).resolves.toBeUndefined();
+
+    expect(registry.getState("a")).toBe("failed");
+    expect(registry.getFailureReason("a")).toBe(boom);
+    await expect(persistence.readPluginSettings()).resolves.toEqual({
+      a: { enabled: true, settings: null },
+    });
+  });
 });
