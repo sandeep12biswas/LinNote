@@ -1,0 +1,23 @@
+{
+  "name": "linnote",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Workspace root for LinNote (Tauri v2 + React + TypeScript, plugin-first architecture). Not published.",
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "dev": "turbo run dev --filter=desktop",
+    "tauri": "pnpm --filter desktop tauri",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "lint:boundaries": "depcruise plugins --config .dependency-cruiser.cjs",
+    "test": "turbo run test",
+    "create-plugin": "node scripts/create-plugin.mjs"
+  },
+  "devDependencies": {
+    "turbo": "^2.10.12",
+    "typescript": "~5.8.3",
+    "dependency-cruiser": "^16.4.1",
+    "vitest": "^2.1.4"
+  }
+}

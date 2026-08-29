@@ -141,3 +141,29 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Tauri / Rust
+# Cargo.lock is committed (apps/desktop/src-tauri/Cargo.lock) — this is an
+# application, not a library, so the lockfile is checked in for
+# reproducible builds, same reasoning as pnpm-lock.yaml.
+src-tauri/target/
+*.pdb
+
+# Turborepo cache (root and per-package)
+.turbo/
+
+# tsc -b composite build output for vite.config.ts (apps/desktop/tsconfig.node.json
+# references it as a composite project, which requires emit even under `tsc -b`)
+apps/desktop/vite.config.js
+apps/desktop/vite.config.d.ts
+
+# App data (local dev)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+.env.local
+
+# Editor
+.idea
+.DS_Store
