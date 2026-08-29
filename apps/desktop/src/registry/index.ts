@@ -5,13 +5,14 @@
 // plugin contract (@linnote/plugin-sdk), not special-cased subsystems.
 //
 // This file implements NTA-8 (manifest discovery & dependency-sorted
-// activation order — a pure function) and NTA-9 (activate()/deactivate()
-// lifecycle + persisted enable/disable, below). Wiring the real
-// plugins/* packages in at app startup is NTA-16 (integration).
-//
-// TODO(phase-1, NTA-10): isolated activate()-throwing failure handling
-// (distinct from the dependency-resolution errors above, which are
-// detected before any activate() call happens) + Settings > Plugins panel.
+// activation order — a pure function), NTA-9 (activate()/deactivate()
+// lifecycle + persisted enable/disable), and NTA-10 (isolated
+// activate()-throwing failure handling, below). Wiring the real
+// plugins/* packages in at app startup is NTA-16 (integration). The
+// Settings > Plugins panel half of NTA-10 is a separate plugin,
+// `plugins/settings-plugins-panel` (`core.settings.plugins`) — it
+// declares the `settingsPanels` contribution; actually rendering it
+// waits on a Settings UI shell that doesn't exist in any ticket yet.
 
 import type { Plugin, PluginContext, PluginId } from "@linnote/plugin-sdk";
 import type { PersistenceProvider, PluginSettingsStore } from "../persistence";
@@ -179,6 +180,12 @@ export interface PluginRegistryOptions {
 export class PluginRegistry {
   private readonly byId = new Map<PluginId, Plugin>();
   private readonly states = new Map<PluginId, PluginState>();
+  /**
+   * Why a plugin is `failed` — either the `ResolutionError` that excluded
+   * it (a bad dependency graph) or whatever `activate()` threw. Cleared
+   * on a subsequent successful `enable()`.
+   */
+  private readonly failures = new Map<PluginId, ResolutionError | unknown>();
   private settings: PluginSettingsStore = {};
 
   constructor(
@@ -197,9 +204,12 @@ export class PluginRegistry {
    * enabled and gets a fresh settings entry written back, so it's there
    * for a future `disable()`/`enable()` call to flip.
    *
-   * Note: `activate()` is not wrapped in try/catch here — a throwing
-   * plugin currently propagates. Isolated failure handling for that
-   * case is NTA-10, not this subtask.
+   * A plugin's `activate()` throwing is caught and marked `failed`
+   * (NTA-10) — it never stops the rest of `order` from activating. This
+   * is distinct from, and handled separately than, the
+   * dependency-resolution failures above: those are detected before any
+   * `activate()` call happens at all, these are a plugin's own runtime
+   * failure once its turn comes.
    */
   async activateAll(): Promise<void> {
     this.settings = await this.options.settingsPersistence.readPluginSettings();
@@ -207,6 +217,7 @@ export class PluginRegistry {
     const { order, errors } = resolveActivationOrder(this.plugins);
     for (const error of errors) {
       this.states.set(error.pluginId, "failed");
+      this.failures.set(error.pluginId, error);
     }
 
     for (const plugin of order) {
@@ -216,8 +227,13 @@ export class PluginRegistry {
         this.settings[id] = { enabled: true, settings: null };
       }
       if (enabled) {
-        await plugin.activate(this.options.createContext(id));
-        this.states.set(id, "active");
+        try {
+          await plugin.activate(this.options.createContext(id));
+          this.states.set(id, "active");
+        } catch (error) {
+          this.states.set(id, "failed");
+          this.failures.set(id, error);
+        }
       } else {
         this.states.set(id, "disabled");
       }
@@ -236,25 +252,40 @@ export class PluginRegistry {
     const plugin = this.requirePlugin(pluginId);
     await plugin.deactivate?.(this.options.createContext(pluginId));
     this.states.set(pluginId, "disabled");
+    this.failures.delete(pluginId);
     this.settings[pluginId] = { ...(this.settings[pluginId] ?? { settings: null }), enabled: false };
     await this.options.settingsPersistence.writePluginSettings(this.settings);
   }
 
   /**
-   * Calls `activate()` and persists `enabled: true`. Whatever
-   * `settings` blob the plugin had before being disabled is passed
-   * through unchanged.
+   * Calls `activate()` and persists `enabled: true` — the persisted
+   * flag reflects the user's intent (try this plugin at startup) and is
+   * set regardless of whether `activate()` succeeds; a throw is caught
+   * and marked `failed` (NTA-10), same as in `activateAll()`, rather
+   * than propagating out of `enable()`. Whatever `settings` blob the
+   * plugin had before being disabled is passed through unchanged.
    */
   async enable(pluginId: PluginId): Promise<void> {
     const plugin = this.requirePlugin(pluginId);
-    await plugin.activate(this.options.createContext(pluginId));
-    this.states.set(pluginId, "active");
+    try {
+      await plugin.activate(this.options.createContext(pluginId));
+      this.states.set(pluginId, "active");
+      this.failures.delete(pluginId);
+    } catch (error) {
+      this.states.set(pluginId, "failed");
+      this.failures.set(pluginId, error);
+    }
     this.settings[pluginId] = { ...(this.settings[pluginId] ?? { settings: null }), enabled: true };
     await this.options.settingsPersistence.writePluginSettings(this.settings);
   }
 
   getState(pluginId: PluginId): PluginState | undefined {
     return this.states.get(pluginId);
+  }
+
+  /** Why `getState(pluginId) === "failed"` — a `ResolutionError` or whatever `activate()` threw. */
+  getFailureReason(pluginId: PluginId): ResolutionError | unknown {
+    return this.failures.get(pluginId);
   }
 
   list(): RegisteredPlugin[] {
