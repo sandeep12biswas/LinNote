@@ -1,7 +1,7 @@
 ---
 name: feature-enhancement
 description: Implement a feature enhancement for the NoteApp project starting from any Jira issue key in the NTA project (NTA-1, NTA-42, NTA-<any number>, etc.) or a jira link like https://sandeep12biswas.atlassian.net/browse/NTA-<number>. Fetches and summarizes the story, gets explicit user confirmation before writing any code, implements the change following this repo's architecture rules, and finishes by writing/running whatever checks apply to the layer touched. Use this whenever the user says things like "implement NTA-12", "work on this jira ticket", "pick up the story at <jira link>", or "start the enhancement for <issue key>" — not for bug fixes with no Jira ticket, and not for ad-hoc requests that don't reference a Jira issue.
-arguments : JIRA-number [base-branch]
+argument-hint: JIRA-number [base-branch]
 ---
 
 # Feature Enhancement (Jira-driven)
@@ -185,7 +185,7 @@ either fact from an older note. What to actually run depends on what you touched
    test passes" if other tests in the same runner could have been affected, and don't claim a
    suite is green without having actually run it.
 
-## Step 7 — Code commit, push the code to git hub
+## Step 7 — Code commit, push, and open the PR
 
 Only after Step 6's checks are green (or, for Rust, written and honestly reported as unverified
 if no toolchain is available):
@@ -203,21 +203,39 @@ if no toolchain is available):
    `-u` already set the upstream).
 4. If the push is rejected (e.g. the remote has diverged), stop and ask the user how to proceed —
    don't force-push without being explicitly told to.
-5. Report the branch name pushed and confirm success from the actual `git push` output — don't
-   claim it pushed without having run it. Opening a pull request is optional and belongs in Step 9
-   (wrap-up) as something to offer, not do unasked.
+5. **Open the PR now** — not optional, and not deferred to wrap-up, because Step 8's Jira comment
+   needs to link it. Use
+   `.claude/skills/feature-enhancement/scripts/create-pr.sh <issue-key> "<PR title>" [base-branch]`,
+   piping the full body in via stdin (Jira link, summary, acceptance-criteria mapping, test
+   results — the same content Step 8's comment will carry):
+   ```bash
+   .claude/skills/feature-enhancement/scripts/create-pr.sh NTA-9 "Registry plugin lifecycle" <<'EOF'
+   ## Jira
+   [NTA-9](https://sandeep12biswas.atlassian.net/browse/NTA-9)
+   ...
+   EOF
+   ```
+   It prints the created PR's URL as its last line of output on success (`gh pr create`'s own
+   behavior) — capture that for Step 8. It refuses to run from `develop`/`main` and resolves a
+   working `gh` binary itself (see the script's own header comment for why that's needed here).
+   **Never test this script's `gh pr create` step against the real repo** — it has no dry-run
+   mode, and doing so opens a real PR (this happened once during development; the accidental PR
+   was closed with an explanatory comment). Validate only argument handling and the branch
+   guard, both of which exit before any `gh` call.
+6. Report the branch name pushed and the PR URL opened, both confirmed from actual command
+   output — don't claim either happened without having run it.
 
 ## Step 8 — Update the Jira ticket
 
-Once the feature branch is pushed, close the loop on the ticket itself — do this automatically as
-part of finishing the story, not as something to offer/ask permission for (unlike opening a PR in
-Step 9):
+Once the PR is open, close the loop on the ticket itself — do this automatically as part of
+finishing the story, not as something to offer/ask permission for:
 
 1. Post a summary comment on the issue via `mcp__atlassian__addCommentToJiraIssue` covering what
    changed (files touched), how it maps back to the story's acceptance criteria, the test result
    (counts, not just "tests pass" — and say plainly if Rust tests were written but unverified,
-   per Step 6), and the feature branch name — the same level of detail you'd give the user in
-   Step 9's wrap-up.
+   per Step 6), the feature branch name, and **the PR URL from Step 7** — the same level of
+   detail you'd give the user in Step 9's wrap-up, plus the PR link since that's why Step 7 now
+   happens before this step.
 2. Transition the issue via `mcp__atlassian__getTransitionsForJiraIssue` +
    `mcp__atlassian__transitionJiraIssue` to whichever returned transition's target status is named
    **"Done"** — look it up rather than hardcoding a transition ID, since IDs can differ across
@@ -230,27 +248,9 @@ Step 9):
 - Report the final test run result verbatim (counts, not just "tests pass"; note explicitly if
   a Rust toolchain genuinely wasn't available to run tests written in `src-tauri/` — don't
   assume that's the case without checking `cargo -V` first).
+- Restate the PR URL opened in Step 7 and confirm the Jira comment in Step 8 linked it.
 - `docs/architecture.md` and `README.md` get updated per *phase* (per `docs/architecture.md`
   §9's phase list and `CLAUDE.md`'s "Project tracking" section — e.g. Phase 1 is tracked as
   NTA-7 with subtasks NTA-8..NTA-15, and NTA-16 with NTA-17..NTA-31), not per individual
   task/subtask — don't update them reflexively here. If this story completes a phase of work,
   ask the user whether they want those docs updated now.
-- Optionally offer (don't do it unasked) to open a pull request from the pushed feature branch
-  targeting the base branch resolved in Step 4. If the user says yes, use
-  `.claude/skills/feature-enhancement/scripts/create-pr.sh <issue-key> "<PR title>" [base-branch]`,
-  piping the full PR body (Jira link, summary, acceptance-criteria mapping, test results — the
-  same content as Step 8's Jira comment) into it via stdin, e.g.:
-  ```bash
-  .claude/skills/feature-enhancement/scripts/create-pr.sh NTA-9 "Registry plugin lifecycle" <<'EOF'
-  ## Jira
-  [NTA-9](https://sandeep12biswas.atlassian.net/browse/NTA-9)
-  ...
-  EOF
-  ```
-  It refuses to run from `develop`/`main` (a PR must come from the feature branch) and resolves
-  a working `gh` binary itself (the one on `PATH` can be a snap launcher that silently no-ops in
-  a sandboxed environment — the script falls back to the real binary via git's credential-helper
-  config). **Never test this script's `gh pr create` step against the real repo** — it has no
-  dry-run mode, and doing so opens a real PR (this happened once during development; the
-  accidental PR was closed with an explanatory comment). Validate argument handling and the
-  branch guard only, both of which exit before any `gh` call.
