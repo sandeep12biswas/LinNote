@@ -7,7 +7,8 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@linnote/plugin-sdk": "workspace:*"
@@ -21,6 +22,7 @@
     "vite": "^7.0.4",
     "@vitejs/plugin-react": "^4.6.0",
     "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6"
+    "@types/react-dom": "^19.1.6",
+    "vitest": "^2.1.4"
   }
 }

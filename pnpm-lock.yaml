@@ -124,6 +124,9 @@ importers:
       vite:
         specifier: ^7.0.4
         version: 7.3.6
+      vitest:
+        specifier: ^2.1.4
+        version: 2.1.9
 
   packages/plugin-sdk:
     devDependencies:

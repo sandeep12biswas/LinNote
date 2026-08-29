@@ -150,6 +150,11 @@ src-tauri/Cargo.lock
 # Turborepo cache (root and per-package)
 .turbo/
 
+# tsc -b composite build output for vite.config.ts (apps/desktop/tsconfig.node.json
+# references it as a composite project, which requires emit even under `tsc -b`)
+apps/desktop/vite.config.js
+apps/desktop/vite.config.d.ts
+
 # App data (local dev)
 *.db
 *.db-journal
