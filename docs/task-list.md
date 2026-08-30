@@ -87,16 +87,16 @@ one phase below.
   - [ ] [NTA-30](https://sandeep12biswas.atlassian.net/browse/NTA-30) core.sync.onedrive
   - [ ] [NTA-31](https://sandeep12biswas.atlassian.net/browse/NTA-31) core.sync.google-drive
 
-## Phase 2 — Workspace hierarchy ⚪ NOT STARTED
+## Phase 2 — Workspace hierarchy 🟡 IN PROGRESS
 
 `WorkspaceNode` tree, Folder Tree + Page List panes wired to real data,
 create/rename/move/delete, fractional-index ordering, trash. Blocks every
 later phase from testing against a real notebook instead of a hardcoded page.
 
-- [ ] [NTA-43](https://sandeep12biswas.atlassian.net/browse/NTA-43) — Phase 2: Workspace hierarchy
-  - [ ] [NTA-49](https://sandeep12biswas.atlassian.net/browse/NTA-49) WorkspaceNode tree data model + id-based flat storage
-  - [ ] [NTA-50](https://sandeep12biswas.atlassian.net/browse/NTA-50) Folder Tree pane: render folder/notebook nodes, expand/collapse, drag-to-reparent
-  - [ ] [NTA-51](https://sandeep12biswas.atlassian.net/browse/NTA-51) Page List pane: list pages for selected folder, nested subpages, highlight open page
+- [ ] [NTA-43](https://sandeep12biswas.atlassian.net/browse/NTA-43) — Phase 2: Workspace hierarchy 🟡 (3/8 subtasks done, on `feature/nta-49-51-workspace-hierarchy` — not yet merged to develop)
+  - [x] [NTA-49](https://sandeep12biswas.atlassian.net/browse/NTA-49) WorkspaceNode tree data model + id-based flat storage
+  - [x] [NTA-50](https://sandeep12biswas.atlassian.net/browse/NTA-50) Folder Tree pane: render folder/notebook nodes, expand/collapse, drag-to-reparent
+  - [x] [NTA-51](https://sandeep12biswas.atlassian.net/browse/NTA-51) Page List pane: list pages for selected folder, nested subpages, highlight open page
   - [ ] [NTA-52](https://sandeep12biswas.atlassian.net/browse/NTA-52) Structural undo stack: Move/Rename/Delete/Create commands
   - [ ] [NTA-53](https://sandeep12biswas.atlassian.net/browse/NTA-53) Fractional-index sibling ordering + drag-and-drop reorder
   - [ ] [NTA-54](https://sandeep12biswas.atlassian.net/browse/NTA-54) Soft-delete trash + cascade delete for folders/notebooks

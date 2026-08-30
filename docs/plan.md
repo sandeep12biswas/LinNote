@@ -54,17 +54,17 @@ static layout).
   - NTA-30 ⚪ `core.sync.onedrive`
   - NTA-31 ⚪ `core.sync.google-drive`
 
-## Phase 2 — Workspace hierarchy ⚪
+## Phase 2 — Workspace hierarchy 🟡
 
 `WorkspaceNode` tree, Folder Tree + Page List panes wired to real data,
 create/rename/move/delete, fractional-index ordering, trash. NTA-13 (Phase 1)
 only built the *static* 4-region layout with placeholder panes — this phase
 wires the tree data and real pane behavior.
 
-- **NTA-43** (Story) ⚪ — Phase 2: Workspace hierarchy
-  - NTA-49 ⚪ WorkspaceNode tree data model + id-based flat storage
-  - NTA-50 ⚪ Folder Tree pane: render folder/notebook nodes, expand/collapse, drag-to-reparent
-  - NTA-51 ⚪ Page List pane: list pages for selected folder, nested subpages, highlight open page
+- **NTA-43** (Story) 🟡 — Phase 2: Workspace hierarchy
+  - NTA-49 ✅ WorkspaceNode tree data model + id-based flat storage — `apps/desktop/src/workspace/`, on `feature/nta-49-51-workspace-hierarchy` (pushed, not yet merged to develop)
+  - NTA-50 ✅ Folder Tree pane: render folder/notebook nodes, expand/collapse, drag-to-reparent — `apps/desktop/src/shell/FolderTreePane.tsx`, same branch
+  - NTA-51 ✅ Page List pane: list pages for selected folder, nested subpages, highlight open page — `apps/desktop/src/shell/PageListPane.tsx`, same branch
   - NTA-52 ⚪ Structural undo stack: Move/Rename/Delete/Create commands
   - NTA-53 ⚪ Fractional-index sibling ordering + drag-and-drop reorder
   - NTA-54 ⚪ Soft-delete trash + cascade delete for folders/notebooks
