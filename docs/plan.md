@@ -1,11 +1,15 @@
 # LinNote — Phased Implementation Plan
 
 This mirrors the phase breakdown in `docs/architecture.md` §9, cross-referenced
-against the actual state of Jira project **NTA** as of 2026-08-29. Update this
+against the actual state of Jira project **NTA** as of 2026-08-30. Update this
 file whenever a phase's Jira mapping changes (a new Story is broken out, a
 phase's scope shifts) — it's the one place to see "what phase are we on and
 what's actually tracked for it," rather than re-deriving it from the Jira
 backlog each time.
+
+Every phase now has a Jira story (NTA-43…NTA-84, added 2026-08-30, closed the
+gaps this file originally flagged) — see `docs/task-list.md` for the same
+data as a single ordered, checkable list in recommended build sequence.
 
 Legend: ✅ Done · 🟡 In progress / partially tracked · ⚪ Not started · —
 Not yet broken into a Jira story (a gap, not a "won't do").
@@ -50,12 +54,22 @@ static layout).
   - NTA-30 ⚪ `core.sync.onedrive`
   - NTA-31 ⚪ `core.sync.google-drive`
 
-## Phase 2 — Workspace hierarchy —
+## Phase 2 — Workspace hierarchy ⚪
 
 `WorkspaceNode` tree, Folder Tree + Page List panes wired to real data,
 create/rename/move/delete, fractional-index ordering, trash. NTA-13 (Phase 1)
-only built the *static* 4-region layout with placeholder panes — the tree data
-and pane behavior itself has no Jira story yet.
+only built the *static* 4-region layout with placeholder panes — this phase
+wires the tree data and real pane behavior.
+
+- **NTA-43** (Story) ⚪ — Phase 2: Workspace hierarchy
+  - NTA-49 ⚪ WorkspaceNode tree data model + id-based flat storage
+  - NTA-50 ⚪ Folder Tree pane: render folder/notebook nodes, expand/collapse, drag-to-reparent
+  - NTA-51 ⚪ Page List pane: list pages for selected folder, nested subpages, highlight open page
+  - NTA-52 ⚪ Structural undo stack: Move/Rename/Delete/Create commands
+  - NTA-53 ⚪ Fractional-index sibling ordering + drag-and-drop reorder
+  - NTA-54 ⚪ Soft-delete trash + cascade delete for folders/notebooks
+  - NTA-55 ⚪ Breadcrumb trail above the editor canvas
+  - NTA-56 ⚪ Lazy loading + virtualized panes + incremental title/text search index
 
 ## Phase 3 — Core canvas 🟡
 
@@ -82,11 +96,18 @@ formatting plugins (bold, italic, headers) made real.
   - NTA-40 ⚪ Segment block: auto-grow height & manual-resize width with reflow
   - NTA-42 ⚪ Wire real bold/italic/header formatting commands into segments
 
-## Phase 5 — Remaining formatting plugins —
+## Phase 5 — Remaining formatting plugins ⚪
 
 Font color (+ contrast), font size, bullet list, checkbox list, alignment —
-made real (beyond the stub activation in NTA-19/20/22/23/24). No Jira story
-yet; expected to follow the same pattern as NTA-32's NTA-42 once Phase 4 lands.
+made real (beyond the stub activation in NTA-19/20/22/23/24), following the
+same pattern as NTA-32's NTA-42.
+
+- **NTA-44** (Story) ⚪ — Phase 5: Remaining formatting plugins (build)
+  - NTA-57 ⚪ core.format.font-color: text color mark + core.util.contrast default suggestion
+  - NTA-58 ⚪ core.format.font-size: text size mark
+  - NTA-59 ⚪ core.format.bullet-list: bulleted list node
+  - NTA-60 ⚪ core.format.checkbox-list: checkable to-do list node
+  - NTA-61 ⚪ core.format.alignment: paragraph/segment alignment
 
 ## Phase 6 — Segment collision handling 🟡
 
@@ -95,29 +116,57 @@ Non-overlap, block-and-snap.
 - **NTA-32** (Story) 🟡 — continued:
   - NTA-41 ⚪ Segment block: non-overlap (block-and-snap)
 
-## Phase 7 — Attachments & embeds —
+## Phase 7 — Attachments & embeds ⚪
 
 Real file-attachment (open in OS-default app) and YouTube-embed
 (inline vs. external playback prompt) behavior, beyond the stub activation in
-NTA-28/29. No Jira story yet.
+NTA-28/29.
 
-## Phase 8 — Undo/redo, model & persistence —
+- **NTA-45** (Story) ⚪ — Phase 7: Attachments & embeds (build)
+  - NTA-62 ⚪ core.element.file-attachment: data model + icon/filename renderer + open externally
+  - NTA-63 ⚪ core.element.youtube-embed: data model + inline sandboxed player
+  - NTA-64 ⚪ YouTube insert-time prompt: "Play here" vs "Open in browser"
+  - NTA-65 ⚪ fileHandlers extension point plumbing
+
+## Phase 8 — Undo/redo, model & persistence ⚪
 
 Unified canvas command stack, structural (workspace tree) command stack,
 full `FileSystemPersistenceProvider` (tree/page/asset read-write, autosave).
-Only the plugin-settings slice (NTA-14) exists so far. No Jira story yet for
-the rest.
+Only the plugin-settings slice (NTA-14) exists so far.
+
+- **NTA-46** (Story) ⚪ — Phase 8: Undo/redo, model & persistence
+  - NTA-66 ⚪ Command interface + one undo/redo stack per open page across all plugins
+  - NTA-67 ⚪ Gesture coalescing for fast-repeating actions
+  - NTA-68 ⚪ Stack cap + diff-based commands
+  - NTA-69 ⚪ FileSystemPersistenceProvider: tree/page/asset read-write
+  - NTA-70 ⚪ Autosave: debounced canvas edits + hard flush on close
+  - NTA-71 ⚪ Crash safety: write-to-temp-then-atomic-rename
+  - NTA-72 ⚪ schemaVersion + migration path for page/tree/plugin-settings
 
 ## Phase 9 — Performance pass ⚪
 
-Tiled canvases, virtualized panes/segments, per-plugin code-splitting. Not
-started; no Jira story yet.
+Tiled canvases, virtualized panes/segments, per-plugin code-splitting.
 
-## Phase 10 — Cloud sync —
+- **NTA-47** (Story) ⚪ — Phase 9: Performance pass
+  - NTA-73 ⚪ Tiled ink canvases: viewport-intersecting tiles only
+  - NTA-74 ⚪ Static vs. active ink layer split
+  - NTA-75 ⚪ RAF batching for pointer-driven state updates
+  - NTA-76 ⚪ Virtualized segment rendering
+  - NTA-77 ⚪ Per-plugin code-splitting
+
+## Phase 10 — Cloud sync ⚪
 
 OneDrive and Google Drive provider plugins, incremental per-file sync,
-conflict-copy handling — beyond the stub activation in NTA-30/31. No Jira
-story yet.
+conflict-copy handling — beyond the stub activation in NTA-30/31.
+
+- **NTA-48** (Story) ⚪ — Phase 10: Cloud sync (build)
+  - NTA-78 ⚪ Shared SyncProvider interface
+  - NTA-79 ⚪ core.sync.onedrive: Microsoft Graph OAuth2 + upload/download/listChanges
+  - NTA-80 ⚪ core.sync.google-drive: Drive API v3 OAuth2 + upload/download/listChanges
+  - NTA-81 ⚪ Independent per-page/per-node/per-asset sync units
+  - NTA-82 ⚪ Conflict handling: last-write-wins + retained conflict copy
+  - NTA-83 ⚪ "Edited elsewhere" warning banner on page open
+  - NTA-84 ⚪ Settings panel: enable OneDrive / Google Drive independently
 
 ## Phase 11 — Stretch ⚪
 
@@ -139,25 +188,31 @@ Kept for history; their intent is absorbed into the phases above:
 |---|---|---|---|
 | NTA-1 | ✅ Done | Install development prerequisites | — (one-off setup, no phase mapping needed) |
 | NTA-2 | 🟡 In Progress | Rich editor integration | Phase 3 + 4 (NTA-32) |
-| NTA-3 | ⚪ To Do | Canvas + attachments | Phase 3 (NTA-32) + Phase 7 |
-| NTA-4 | ⚪ To Do | Search + tags | Not yet mapped to a phase story (workspace search is mentioned under Phase 8's persistence design, `docs/architecture.md` §6, but has no dedicated phase slot yet) |
-| NTA-5 | ⚪ To Do | Sync engine | Phase 10 |
-| NTA-6 | ⚪ To Do | Polish + packaging | Phase 9 / Phase 11 |
+| NTA-3 | ⚪ To Do | Canvas + attachments | Phase 3 (NTA-32) + Phase 7 (NTA-45) |
+| NTA-4 | ⚪ To Do | Search + tags | Phase 2 (NTA-56) + Phase 8 (NTA-46) |
+| NTA-5 | ⚪ To Do | Sync engine | Phase 10 (NTA-48) |
+| NTA-6 | ⚪ To Do | Polish + packaging | Phase 9 (NTA-47) / Phase 11 |
 
 ---
 
-## Gaps to close next
+## Recommended build order
 
-In rough priority order, the phases with **no Jira story at all** yet:
+Every phase now has a Jira story — NTA-43…NTA-48, added 2026-08-30, cover
+what used to be gaps. Rough build order, with reasoning:
 
-1. Phase 2 — Workspace hierarchy (blocks real Folder Tree / Page List data)
-2. Phase 5 — Remaining formatting plugins (font-color/size, lists, alignment)
-3. Phase 7 — Attachments & embeds (real file-open / YouTube playback)
-4. Phase 8 — Undo/redo & full persistence (tree/page/asset read-write)
-5. Phase 9 — Performance pass
-6. Phase 10 — Cloud sync (real OAuth + sync logic)
-7. Phase 11 — Stretch (not scheduled, listed for completeness)
+1. Finish the remaining NTA-16 stub activations (NTA-19…31) — cheap, already
+   half done, gives every phase below a visible menu/toolbar hook to build
+   real logic against.
+2. Phase 2 — Workspace hierarchy (NTA-43) — blocks real Folder Tree / Page
+   List data; nothing else can be tested against a real page without it.
+3. Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text
+   (NTA-32) — each sub-piece builds directly on the last.
+4. Phase 5 — Remaining formatting plugins, build (NTA-44).
+5. Phase 7 — Attachments & embeds, build (NTA-45).
+6. Phase 8 — Undo/redo & full persistence (NTA-46).
+7. Phase 9 — Performance pass (NTA-47).
+8. Phase 10 — Cloud sync, build (NTA-48).
+9. Phase 11 — Stretch (not scheduled, no Jira story — intentionally last).
 
-Phase 2 is the biggest immediate gap: without real `WorkspaceNode` tree data,
-Folder Tree/Page List stay placeholders no matter how far Phase 3/4 (NTA-32)
-gets on the editor canvas itself.
+See `docs/task-list.md` for this same order as a single flat, checkable list
+across all 84 issues.
