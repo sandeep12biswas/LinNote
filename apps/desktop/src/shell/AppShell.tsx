@@ -2,11 +2,9 @@
 // §2): menu bar and toolbar stacked on top, with a Folder Tree / Page
 // List / Editor Canvas three-pane split filling the rest of the window.
 // Wraps `MenuBar` (./MenuBar.tsx) and `Toolbar` (./Toolbar.tsx) around
-// static placeholder panes — real `WorkspaceNode` tree data for the
-// Folder Tree and Page List panes (../persistence/) is phase-2, not this
-// ticket. "Window scope (decided)" per §2: single page open at a time, no
-// tab strip, no multi-window model — the Editor Canvas pane below is a
-// single static placeholder, not a tab strip.
+// the panes. "Window scope (decided)" per §2: single page open at a
+// time, no tab strip, no multi-window model — the Editor Canvas pane
+// below is still a single static placeholder, not a tab strip.
 //
 // NTA-15 (integration): `registeredPlugins`/`onRunCommand` now come from a
 // real, activated `PluginRegistry` (../App.tsx owns building it) instead
@@ -15,11 +13,19 @@
 // click really runs that plugin's registered command via the shared
 // command bus (../registry/createContext.ts). `PluginsStatusPanel` below
 // is the minimal "Settings > Plugins" stand-in described there.
+//
+// NTA-49/50/51 replace what used to be static Folder Tree / Page List
+// placeholder panes with `FolderTreePane`/`PageListPane`
+// (./FolderTreePane.tsx, ./PageListPane.tsx), backed by the in-memory
+// `WorkspaceNode` tree store (../workspace/). The Editor Canvas pane
+// itself is still Phase 3 (NTA-32) — not this ticket.
 
 import { buildMenuBar, buildToolbar } from "./index";
 import { MenuBar } from "./MenuBar";
 import { Toolbar } from "./Toolbar";
 import { PluginsStatusPanel } from "./PluginsStatusPanel";
+import { FolderTreePane } from "./FolderTreePane";
+import { PageListPane } from "./PageListPane";
 import type { RegisteredPlugin } from "../registry";
 
 export interface AppShellProps {
@@ -38,9 +44,11 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
       <div className="app-shell__main">
         <section className="app-shell__pane app-shell__pane--folder-tree" aria-label="Folder Tree">
           <h2 className="app-shell__pane-label">Folder Tree</h2>
+          <FolderTreePane />
         </section>
         <section className="app-shell__pane app-shell__pane--page-list" aria-label="Page List">
           <h2 className="app-shell__pane-label">Page List</h2>
+          <PageListPane />
         </section>
         <section className="app-shell__pane app-shell__pane--editor-canvas" aria-label="Editor Canvas">
           <h2 className="app-shell__pane-label">Editor Canvas</h2>
