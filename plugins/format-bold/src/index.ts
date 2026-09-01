@@ -1,16 +1,17 @@
 import type { Plugin, PluginContext } from "@linnote/plugin-sdk";
+import { getActiveEditor } from "@linnote/rich-text-engine";
 
 // Bold — core.format.bold
 // Wraps TipTap's Bold mark; no dependency on any other core.format.* plugin (Desing architecture §8.2).
-// TODO(phase-4): implement real Bold-mark toggling against
-// @linnote/rich-text-engine. See docs/architecture.md for the
-// authoritative design (mirrors the Notion "Desing architecture" page).
 //
-// NTA-15 (integration): declares a stub Format-menu entry and registers a
-// no-op command for it — the story's acceptance criteria needs one real,
-// clickable end-to-end example (menu building -> command dispatch) to
-// prove the registry/shell/plugin wiring works together, and explicitly
-// allows a no-op stub here since real formatting logic is Phase 4/5.
+// NTA-15 (integration) declared the Format-menu entry and registered a
+// no-op command for it, proving the registry/shell/plugin wiring works
+// end-to-end. NTA-42 replaces that no-op with the real thing: toggles
+// TipTap's Bold mark on whichever segment editor was last focused
+// (`@linnote/rich-text-engine`'s `getActiveEditor()` — see that
+// package's `activeEditor.ts` for why a command, which isn't a React
+// component, needs a tracker like this rather than reading
+// `useRichTextEditor()` itself).
 const APPLY_BOLD_COMMAND = "core.format.bold.apply";
 
 export const plugin: Plugin = {
@@ -26,10 +27,11 @@ export const plugin: Plugin = {
     },
   },
   activate(ctx: PluginContext) {
-    // TODO(phase-4): replace this no-op with real Bold-mark toggling once
-    // the canvas/editor surface exists.
     ctx.commands.register(APPLY_BOLD_COMMAND, () => {
-      console.log(`[core.format.bold] "${APPLY_BOLD_COMMAND}" run (no-op stub — NTA-15 integration)`);
+      // No-op if nothing's been focused yet (or the last-focused segment
+      // was since removed) — same "don't crash the dispatcher" spirit as
+      // registry/createContext.ts's CommandBus itself.
+      getActiveEditor()?.chain().focus().toggleBold().run();
     });
   },
 };

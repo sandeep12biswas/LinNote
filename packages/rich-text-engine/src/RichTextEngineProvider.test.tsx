@@ -1,7 +1,9 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Extension, type Editor } from "@tiptap/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { EditorContent } from "@tiptap/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getActiveEditor, setActiveEditor } from "./activeEditor";
 import type { RichTextDoc } from "./richTextEditor";
 import { RichTextEngineProvider, useRichTextEditor } from "./RichTextEngineProvider";
 
@@ -16,6 +18,10 @@ const ProbeExtension = Extension.create({ name: "probe-extension" });
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
+
+beforeEach(() => {
+  setActiveEditor(null); // isolate NTA-42's active-editor tracker between tests — it's module-level state
+});
 
 afterEach(() => {
   if (root) {
@@ -108,5 +114,72 @@ describe("RichTextEngineProvider", () => {
     const names = holder.editor?.extensionManager.extensions.map((ext) => ext.name) ?? [];
     expect(names).toContain("probe-extension");
     expect(names).toContain("starterKit");
+  });
+
+  // `editor.commands.focus()` alone doesn't dispatch a real DOM focus
+  // event (TipTap's `onFocus` fires off the ProseMirror view's actual
+  // DOM node) — these two tests render `EditorContent` (this package's
+  // own re-export) themselves and focus the resulting `.ProseMirror`
+  // node directly, the same DOM path a real segment's `SegmentEditor`
+  // (plugins/element-text-segment) exercises.
+
+  it("becomes the active editor (NTA-42) once focused", () => {
+    function Probe() {
+      const editor = useRichTextEditor();
+      return <EditorContent editor={editor} />;
+    }
+
+    mount(
+      <RichTextEngineProvider>
+        <Probe />
+      </RichTextEngineProvider>,
+    );
+    expect(getActiveEditor()).toBeNull(); // not yet focused
+
+    const proseMirror = container!.querySelector(".ProseMirror") as HTMLElement;
+    act(() => proseMirror.focus());
+
+    expect(getActiveEditor()).not.toBeNull();
+  });
+
+  it("clears the active-editor tracker on unmount only if it's still the tracked one", () => {
+    function ProbeA() {
+      const editor = useRichTextEditor();
+      return <EditorContent editor={editor} />;
+    }
+    function ProbeB() {
+      const editor = useRichTextEditor();
+      return <EditorContent editor={editor} />;
+    }
+
+    let containerA: HTMLDivElement | null = document.createElement("div");
+    document.body.appendChild(containerA);
+    let rootA: Root | null = createRoot(containerA);
+    act(() =>
+      rootA!.render(
+        <RichTextEngineProvider>
+          <ProbeA />
+        </RichTextEngineProvider>,
+      ),
+    );
+
+    mount(
+      <RichTextEngineProvider>
+        <ProbeB />
+      </RichTextEngineProvider>,
+    ); // this test's own `container`/`root`, cleaned up by the top-level afterEach
+
+    act(() => (containerA!.querySelector(".ProseMirror") as HTMLElement).focus());
+    const activeAfterA = getActiveEditor();
+    act(() => (container!.querySelector(".ProseMirror") as HTMLElement).focus()); // B is now the active editor, not A
+    const activeAfterB = getActiveEditor();
+    expect(activeAfterB).not.toBe(activeAfterA); // sanity: focusing B actually changed the tracked editor
+
+    act(() => rootA!.unmount()); // A unmounts — should NOT clear B's tracked reference
+    containerA.remove();
+    containerA = null;
+    rootA = null;
+
+    expect(getActiveEditor()).toBe(activeAfterB);
   });
 });
