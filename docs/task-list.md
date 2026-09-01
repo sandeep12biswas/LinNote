@@ -108,13 +108,13 @@ later phase from testing against a real notebook instead of a hardcoded page.
   - [x] [NTA-55](https://sandeep12biswas.atlassian.net/browse/NTA-55) Breadcrumb trail above the editor canvas
   - [x] [NTA-56](https://sandeep12biswas.atlassian.net/browse/NTA-56) Lazy loading + virtualized panes + incremental title/text search index
 
-## Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text 🟡
+## Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text ✅ DONE
 
 Viewport transform, ink element type, page header/background (Phase 3) →
 TipTap + segment blocks + first real formatting (Phase 4) → non-overlap
 block-and-snap (Phase 6), all one story since each builds on the last.
 
-- [ ] [NTA-32](https://sandeep12biswas.atlassian.net/browse/NTA-32) — Core note editor: canvas, segment blocks & rich text 🟡
+- [x] [NTA-32](https://sandeep12biswas.atlassian.net/browse/NTA-32) — Core note editor: canvas, segment blocks & rich text — all 10 subtasks merged into `feature/module-build`, transitioned to Done in Jira with a summary comment on each
   - [x] [NTA-33](https://sandeep12biswas.atlassian.net/browse/NTA-33) Canvas viewport: pan/zoom transform & render surface
   - [x] [NTA-34](https://sandeep12biswas.atlassian.net/browse/NTA-34) Page header: title, optional date & alignment
   - [x] [NTA-35](https://sandeep12biswas.atlassian.net/browse/NTA-35) Page background color + auto-contrast font suggestion
@@ -124,7 +124,7 @@ block-and-snap (Phase 6), all one story since each builds on the last.
   - [x] [NTA-39](https://sandeep12biswas.atlassian.net/browse/NTA-39) Segment block: drag/reposition with formatting preserved
   - [x] [NTA-40](https://sandeep12biswas.atlassian.net/browse/NTA-40) Segment block: auto-grow height & manual-resize width with reflow
   - [x] [NTA-41](https://sandeep12biswas.atlassian.net/browse/NTA-41) Segment block: non-overlap (block-and-snap) — *Phase 6*
-  - [ ] [NTA-42](https://sandeep12biswas.atlassian.net/browse/NTA-42) Wire real bold/italic/header formatting commands into segments
+  - [x] [NTA-42](https://sandeep12biswas.atlassian.net/browse/NTA-42) Wire real bold/italic/header formatting commands into segments
 
 ## Phase 5 — Remaining formatting plugins (build) ⚪ NOT STARTED
 
