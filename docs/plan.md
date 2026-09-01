@@ -71,10 +71,10 @@ wires the tree data and real pane behavior.
   (`shell/index.ts`'s barrel exports, `shell/FolderTreePane.tsx`'s
   drag-and-drop rendering). Verified after all five landed: desktop
   typecheck clean, 173/173 desktop tests passing, `pnpm lint:boundaries`
-  clean. Jira still shows NTA-52…56 as "In Progress" (stale — set by an
-  earlier session's ticket-fetch step without the work being done at the
-  time) — left as-is per instruction, not yet reconciled with the actual
-  Done state of the code.
+  clean. PR [#16](https://github.com/sandeep12biswas/LinNote/pull/16)
+  (`feature/module-build` → `develop`) opened covering all 5 subtasks;
+  NTA-43/52/53/54/55/56 each got a summary comment and were transitioned
+  to Done in Jira.
   - NTA-49 ✅ WorkspaceNode tree data model + id-based flat storage — `apps/desktop/src/workspace/`
   - NTA-50 ✅ Folder Tree pane: render folder/notebook nodes, expand/collapse, drag-to-reparent — `apps/desktop/src/shell/FolderTreePane.tsx`
   - NTA-51 ✅ Page List pane: list pages for selected folder, nested subpages, highlight open page — `apps/desktop/src/shell/PageListPane.tsx`

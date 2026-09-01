@@ -98,7 +98,7 @@ one phase below.
 create/rename/move/delete, fractional-index ordering, trash. Blocks every
 later phase from testing against a real notebook instead of a hardcoded page.
 
-- [x] [NTA-43](https://sandeep12biswas.atlassian.net/browse/NTA-43) — Phase 2: Workspace hierarchy — all 8 subtasks merged into `feature/module-build` (2026-09-01); Jira status still shows In Progress on NTA-52…56, left as-is per instruction — code is done and verified (173 desktop tests passing), not yet reconciled with Jira
+- [x] [NTA-43](https://sandeep12biswas.atlassian.net/browse/NTA-43) — Phase 2: Workspace hierarchy — all 8 subtasks merged into `feature/module-build` (2026-09-01), PR [#16](https://github.com/sandeep12biswas/LinNote/pull/16) opened against `develop`, and NTA-43/52/53/54/55/56 transitioned to Done in Jira with a summary comment on each
   - [x] [NTA-49](https://sandeep12biswas.atlassian.net/browse/NTA-49) WorkspaceNode tree data model + id-based flat storage
   - [x] [NTA-50](https://sandeep12biswas.atlassian.net/browse/NTA-50) Folder Tree pane: render folder/notebook nodes, expand/collapse, drag-to-reparent
   - [x] [NTA-51](https://sandeep12biswas.atlassian.net/browse/NTA-51) Page List pane: list pages for selected folder, nested subpages, highlight open page
