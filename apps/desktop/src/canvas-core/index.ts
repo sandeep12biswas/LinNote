@@ -39,6 +39,7 @@
 // TODO(phase-8): Command stack (§13), diff-based, capped at ~200 entries.
 
 import { create } from "zustand";
+import { suggestTextColor } from "@linnote/contrast-util";
 import type { CanvasElement, NotePage } from "../types";
 import { createSeedNotePages, DEFAULT_BACKGROUND_COLOR } from "./mockData";
 
@@ -106,10 +107,7 @@ export function createBlankNotePage(id: string): NotePage {
     background: {
       kind: "color",
       color: DEFAULT_BACKGROUND_COLOR,
-      // TODO(NTA-35): recompute when the background color picker lands;
-      // hardcoding the seed default's own suggestion keeps this in sync
-      // with ./mockData.ts's `DEFAULT_BACKGROUND_COLOR` for now.
-      suggestedTextColor: "#0f0f0f",
+      suggestedTextColor: suggestTextColor(DEFAULT_BACKGROUND_COLOR),
     },
     elements: [],
     createdAt: now,
@@ -172,6 +170,21 @@ export function updateHeaderInPage(page: NotePage, updater: (header: NotePage["h
   return { ...page, header: updater(page.header), updatedAt: new Date().toISOString() };
 }
 
+/**
+ * Pure: returns a new `NotePage` with `background.color` set to `color`
+ * (kind forced to `"color"` — NTA-35 is the color picker only, not a
+ * pattern switcher) and `suggestedTextColor` recomputed via
+ * `@linnote/contrast-util`'s `suggestTextColor` for the new color.
+ * `setBackgroundColor` below's zustand wrapper.
+ */
+export function setBackgroundColorInPage(page: NotePage, color: string): NotePage {
+  return {
+    ...page,
+    background: { ...page.background, kind: "color", color, suggestedTextColor: suggestTextColor(color) },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 interface NotePageState {
   pages: Record<string, NotePage>;
   /**
@@ -205,6 +218,13 @@ interface NotePageState {
    * has touched it doesn't throw.
    */
   updateHeader: (id: string, updater: (header: NotePage["header"]) => NotePage["header"]) => void;
+  /**
+   * Sets `id`'s page background to `color` (and recomputes
+   * `suggestedTextColor` alongside it) — NTA-35's `BackgroundPicker`
+   * (./BackgroundPicker.tsx) calls this on every color change.
+   * Get-or-creates the page first (same as `addElement`/`updateHeader`).
+   */
+  setBackgroundColor: (id: string, color: string) => void;
 }
 
 /**
@@ -236,10 +256,15 @@ export const useNotePageStore = create<NotePageState>((set, get) => ({
     const { pages: withPage, page } = getOrCreatePage(get().pages, id);
     set({ pages: { ...withPage, [id]: updateHeaderInPage(page, updater) } });
   },
+  setBackgroundColor: (id, color) => {
+    const { pages: withPage, page } = getOrCreatePage(get().pages, id);
+    set({ pages: { ...withPage, [id]: setBackgroundColorInPage(page, color) } });
+  },
 }));
 
-export { createSeedNotePages } from "./mockData";
+export { createSeedNotePages, DEFAULT_BACKGROUND_COLOR } from "./mockData";
 export { CanvasViewport, useCanvasCoordinates } from "./CanvasViewport";
 export type { CanvasCoordinates, CanvasPoint, CanvasViewportProps } from "./CanvasViewport";
 export { SegmentLayerHost } from "./SegmentLayerHost";
 export { PageHeader } from "./PageHeader";
+export { BackgroundPicker } from "./BackgroundPicker";

@@ -335,6 +335,29 @@ button {
   border-color: currentColor;
 }
 
+/* ---- Background picker (NTA-35) ---- */
+
+.background-picker {
+  position: relative;
+  z-index: 1; /* stays above the pan/zoom-transformed layer beneath it, same as .page-header */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 20px 12px;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+.background-picker__swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+}
+
 /* ---- Segment blocks (NTA-37) ----
    `.segment-layer` itself has no explicit size (content-sized like its
    `.canvas-viewport__transform` parent), so empty canvas space simply
