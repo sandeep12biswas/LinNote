@@ -70,10 +70,37 @@
 //    and never remounts/resets during a drag, satisfying the ticket's
 //    "byte-identical content, no flicker" requirement structurally
 //    rather than needing special-case code for it.
+// 5. Auto-grow height + manual-resize width, with reflow (NTA-40):
+//    height already grows visually for free — `SegmentBlockView` sets
+//    CSS `minHeight`, never `height`, so ordinary block layout grows the
+//    box downward as content wraps to more lines, never sideways.
+//    What's missing before this ticket is the *stored* `segment.height`
+//    ever reflecting that — it stayed frozen at whatever it was created
+//    with, which understated `isPointInsideSegment`'s hit-test box for
+//    any segment that had grown since. `useAutoGrowHeight` below fixes
+//    that with a `ResizeObserver` on each segment's own wrapper,
+//    reporting real measured height back through `onHeightChange`
+//    whenever it changes. Width resize is genuinely new: a thin
+//    `.segment-block__resize-handle` strip on each side starts a resize
+//    gesture, tracked the same window-scoped, `screenToCanvas`-driven
+//    way as NTA-39's drag (merged into the very same effect — the two
+//    are mutually exclusive, so one shared `pointermove`/`pointerup`
+//    pair covers both). Dragging the right handle changes only `width`;
+//    the left handle changes `width` *and* `x` together so the
+//    segment's *right* edge stays fixed while its left edge follows the
+//    pointer. Reflow needs no extra code: `width` is already applied as
+//    an inline style, so the browser (and TipTap's own text wrapping
+//    inside it) reflows automatically the moment it changes.
 //
-// TODO(NTA-40): real auto-grow-height/manual-resize-width — `height` is
-// still an otherwise-placeholder default (or the drawn rectangle's own
-// size for NTA-38), not kept in sync with rendered content size.
+// jsdom (this workspace's test environment) doesn't implement
+// `ResizeObserver` and can't perform real CSS layout regardless, so
+// `SegmentLayer.test.tsx`'s auto-grow-height coverage can only verify
+// the *wiring* (mount → observe → onHeightChange when fired) against a
+// test-only polyfill, not real rendered measurements — the actual
+// "never needs manual resize" visual behavior is a CSS fact (no
+// `height` in the inline style, only `minHeight`), verified by
+// inspection rather than a rendering test. Width-resize, by contrast,
+// is pure coordinate math like NTA-39's drag and is fully testable.
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -110,7 +137,13 @@ export interface SegmentBlockData {
 
 /** A segment's default size for a brand-new, empty create-on-type block. */
 export const DEFAULT_SEGMENT_WIDTH = 240;
-export const DEFAULT_SEGMENT_HEIGHT = 32; // TODO(NTA-40): replace with a real measured/auto-grown height.
+// Overwritten almost immediately by `useAutoGrowHeight`'s first real
+// measurement once the segment mounts — this is just what a
+// freshly-created segment's `height` starts as before that happens.
+export const DEFAULT_SEGMENT_HEIGHT = 32;
+
+/** Width resize (NTA-40) never shrinks a segment below this — must match `.segment-block`'s own CSS `min-width` (apps/desktop/src/App.css); the two can't share a single source of truth across a TS/CSS boundary, so keep them in sync by hand. */
+export const MIN_SEGMENT_WIDTH = 40;
 
 /** True if `point` (canvas-space) falls within `segment`'s bounding box. */
 export function isPointInsideSegment(point: CanvasPoint, segment: SegmentBlockData): boolean {
@@ -153,6 +186,10 @@ export interface SegmentLayerProps {
   onSegmentContentChange: (id: string, content: RichTextDoc) => void;
   /** Called with an existing segment's new `x`/`y` (canvas-space) as it's dragged — see NTA-39 in this file's header comment. */
   onMoveSegment: (id: string, x: number, y: number) => void;
+  /** Called with a segment's newly-measured rendered height whenever it changes — see NTA-40 (auto-grow height) in this file's header comment. */
+  onHeightChange: (id: string, height: number) => void;
+  /** Called with an existing segment's new `x`/`width` (canvas-space) as it's resized from a side handle — see NTA-40 in this file's header comment. `x` changes alongside `width` for a left-edge resize (keeping the right edge fixed); for a right-edge resize `x` is unchanged. */
+  onResizeSegment: (id: string, x: number, width: number) => void;
   /** Converts a pointer event's `clientX`/`clientY` (screen space) into canvas-space — see canvas-core's `useCanvasCoordinates()`. NTA-39's drag gesture needs this (not just `pointerPosition`) for the reason its own header-comment section explains. */
   screenToCanvas: (clientX: number, clientY: number) => CanvasPoint;
   /**
@@ -174,6 +211,8 @@ export function SegmentLayer({
   onCreateSegment,
   onSegmentContentChange,
   onMoveSegment,
+  onHeightChange,
+  onResizeSegment,
   screenToCanvas,
   onCreateVisibleSegmentReady,
   setPanSuppressed,
@@ -190,6 +229,8 @@ export function SegmentLayer({
   onCreateSegmentRef.current = onCreateSegment;
   const onMoveSegmentRef = useRef(onMoveSegment);
   onMoveSegmentRef.current = onMoveSegment;
+  const onResizeSegmentRef = useRef(onResizeSegment);
+  onResizeSegmentRef.current = onResizeSegment;
   const screenToCanvasRef = useRef(screenToCanvas);
   screenToCanvasRef.current = screenToCanvas;
   const setPanSuppressedRef = useRef(setPanSuppressed);
@@ -330,21 +371,65 @@ export function SegmentLayer({
     setPanSuppressedRef.current?.(true);
   }
 
+  // Manual-resize width (NTA-40) — mutually exclusive with `draggingRef`
+  // above (a pointerdown starts at most one of the two), so they share
+  // the one `pointermove`/`pointerup` pair below rather than each
+  // registering their own window listeners.
+  const resizingRef = useRef<{
+    id: string;
+    edge: "left" | "right";
+    startCanvasX: number;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+
+  function handleResizeHandleDown(segmentId: string, edge: "left" | "right", clientX: number) {
+    const segment = segmentsRef.current.find((candidate) => candidate.id === segmentId);
+    if (!segment) return;
+    resizingRef.current = {
+      id: segmentId,
+      edge,
+      startCanvasX: screenToCanvasRef.current(clientX, 0).x,
+      startX: segment.x,
+      startWidth: segment.width,
+    };
+    setPanSuppressedRef.current?.(true);
+  }
+
   useEffect(() => {
     function handlePointerMove(event: PointerEvent) {
       const dragging = draggingRef.current;
-      if (!dragging) return;
-      const point = screenToCanvasRef.current(event.clientX, event.clientY);
-      onMoveSegmentRef.current(
-        dragging.id,
-        dragging.startX + (point.x - dragging.startCanvas.x),
-        dragging.startY + (point.y - dragging.startCanvas.y),
-      );
+      if (dragging) {
+        const point = screenToCanvasRef.current(event.clientX, event.clientY);
+        onMoveSegmentRef.current(
+          dragging.id,
+          dragging.startX + (point.x - dragging.startCanvas.x),
+          dragging.startY + (point.y - dragging.startCanvas.y),
+        );
+        return;
+      }
+
+      const resizing = resizingRef.current;
+      if (resizing) {
+        const dx = screenToCanvasRef.current(event.clientX, 0).x - resizing.startCanvasX;
+        if (resizing.edge === "right") {
+          const width = Math.max(MIN_SEGMENT_WIDTH, resizing.startWidth + dx);
+          onResizeSegmentRef.current(resizing.id, resizing.startX, width);
+        } else {
+          // Left edge: width shrinks as it moves right (positive dx), and
+          // x is *derived* from the new width so that x + width — the
+          // right edge — stays exactly fixed, clamped or not.
+          const width = Math.max(MIN_SEGMENT_WIDTH, resizing.startWidth - dx);
+          const x = resizing.startX + (resizing.startWidth - width);
+          onResizeSegmentRef.current(resizing.id, x, width);
+        }
+      }
     }
 
     function handlePointerUp() {
-      if (!draggingRef.current) return;
+      if (!draggingRef.current && !resizingRef.current) return;
       draggingRef.current = null;
+      resizingRef.current = null;
       setPanSuppressedRef.current?.(false);
     }
 
@@ -367,6 +452,8 @@ export function SegmentLayer({
           onAutoFocusHandled={() => setPendingFocus(null)}
           onContentChange={onSegmentContentChange}
           onDragHandleDown={handleDragHandleDown}
+          onHeightChange={onHeightChange}
+          onResizeHandleDown={handleResizeHandleDown}
         />
       ))}
     </div>
@@ -381,6 +468,10 @@ interface SegmentBlockViewProps {
   onContentChange: (id: string, content: RichTextDoc) => void;
   /** Grabbing the border/padding (not the text content) starts a drag (NTA-39) — see the `handlePointerDown` below and this file's header comment. */
   onDragHandleDown: (segmentId: string, clientX: number, clientY: number) => void;
+  /** The segment's real rendered height, whenever `useAutoGrowHeight` observes it changing (NTA-40). */
+  onHeightChange: (id: string, height: number) => void;
+  /** Grabbing a side resize handle starts a width resize (NTA-40). */
+  onResizeHandleDown: (segmentId: string, edge: "left" | "right", clientX: number) => void;
 }
 
 function SegmentBlockView({
@@ -390,7 +481,11 @@ function SegmentBlockView({
   onAutoFocusHandled,
   onContentChange,
   onDragHandleDown,
+  onHeightChange,
+  onResizeHandleDown,
 }: SegmentBlockViewProps) {
+  const elementRef = useAutoGrowHeight(segment.id, segment.height, onHeightChange);
+
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     // Always: stops a click/drag-to-edit inside a segment from bubbling
     // up to CanvasViewport's own pointerdown handler, which would
@@ -408,14 +503,22 @@ function SegmentBlockView({
     onDragHandleDown(segment.id, event.clientX, event.clientY);
   }
 
+  function handleResizeHandlePointerDown(event: ReactPointerEvent<HTMLDivElement>, edge: "left" | "right") {
+    event.stopPropagation(); // don't also trigger the wrapper's own reposition-drag or bubble up to CanvasViewport's pan
+    if (event.button !== 0) return;
+    event.preventDefault();
+    onResizeHandleDown(segment.id, edge, event.clientX);
+  }
+
   return (
     <div
+      ref={elementRef}
       className={`segment-block segment-block--${segment.visibility}`}
       // `minHeight`, not `height`: content still grows the box taller
-      // (docs/architecture.md §7's "auto-grows downward") — this only
-      // keeps a deliberately drag-drawn rectangle (NTA-38) from visually
-      // shrinking below the size it was drawn at. Real measured-height
-      // persistence back onto `segment.height` is NTA-40's job.
+      // (docs/architecture.md §7's "auto-grows downward") — this keeps
+      // a deliberately drag-drawn rectangle (NTA-38) or a stored
+      // measured height (NTA-40) from visually shrinking below its
+      // known size, without ever *capping* growth.
       style={{
         left: segment.x,
         top: segment.y,
@@ -425,11 +528,60 @@ function SegmentBlockView({
       }}
       onPointerDown={handlePointerDown}
     >
+      <div
+        className="segment-block__resize-handle segment-block__resize-handle--left"
+        onPointerDown={(event) => handleResizeHandlePointerDown(event, "left")}
+      />
       <RichTextEngineProvider content={segment.content} onChange={(doc) => onContentChange(segment.id, doc)}>
         <SegmentEditor autoFocus={autoFocus} firstChar={firstChar} onAutoFocusHandled={onAutoFocusHandled} />
       </RichTextEngineProvider>
+      <div
+        className="segment-block__resize-handle segment-block__resize-handle--right"
+        onPointerDown={(event) => handleResizeHandlePointerDown(event, "right")}
+      />
     </div>
   );
+}
+
+/**
+ * Watches `elementRef`'s own rendered height via `ResizeObserver` and
+ * calls `onHeightChange(id, height)` whenever it differs from the
+ * currently-known `height` — NTA-40's auto-grow persistence (see this
+ * file's header comment). Returns the ref to attach to the observed
+ * element. A plain effect + `ResizeObserver`, not a third-party hook,
+ * since this is the only place in the workspace that needs one.
+ */
+function useAutoGrowHeight(
+  segmentId: string,
+  knownHeight: number,
+  onHeightChange: (id: string, height: number) => void,
+) {
+  const elementRef = useRef<HTMLDivElement>(null);
+  const knownHeightRef = useRef(knownHeight);
+  knownHeightRef.current = knownHeight;
+  const onHeightChangeRef = useRef(onHeightChange);
+  onHeightChangeRef.current = onHeightChange;
+  const segmentIdRef = useRef(segmentId);
+  segmentIdRef.current = segmentId;
+
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!element) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const measured = entries[0]?.borderBoxSize?.[0]?.blockSize ?? entries[0]?.contentRect.height;
+      if (measured === undefined || Math.round(measured) === Math.round(knownHeightRef.current)) return;
+      onHeightChangeRef.current(segmentIdRef.current, measured);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+    // Deliberately just `[]`: re-observing on every `segmentId` change
+    // isn't needed since `SegmentBlockView` unmounts/remounts (a new
+    // `key`) rather than reusing this instance for a different segment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return elementRef;
 }
 
 interface SegmentEditorProps {

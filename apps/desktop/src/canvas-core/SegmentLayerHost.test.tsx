@@ -138,4 +138,39 @@ describe("SegmentLayerHost", () => {
     expect(updated.x).toBe(40);
     expect(updated.y).toBe(30);
   });
+
+  it("dragging a segment's right resize handle (NTA-40) updates its width in the real store", () => {
+    const existing: SegmentBlock = {
+      id: "seg-1",
+      type: "segment",
+      visibility: "visible",
+      x: 10,
+      y: 10,
+      width: 100,
+      height: 30,
+      content: undefined,
+      zIndex: 0,
+    };
+    useNotePageStore.setState((state) => ({
+      pages: {
+        ...state.pages,
+        "page-groceries": { ...state.pages["page-groceries"], elements: [existing] },
+      },
+    }));
+    const commandBus = makeFakeCommandBus();
+    mount(
+      <CanvasViewport pageId="page-groceries">
+        <SegmentLayerHost pageId="page-groceries" commandBus={commandBus} />
+      </CanvasViewport>,
+    );
+    const handle = container!.querySelector(".segment-block__resize-handle--right")!;
+
+    dispatchPointerAt(handle, "pointerdown", 110, 10); // right edge, at x = 10 + 100
+    dispatchPointerAt(window, "pointermove", 150, 10); // +40
+    dispatchPointerAt(window, "pointerup", 150, 10);
+
+    const updated = useNotePageStore.getState().pages["page-groceries"].elements[0] as SegmentBlock;
+    expect(updated.width).toBe(140);
+    expect(updated.x).toBe(10); // unchanged
+  });
 });

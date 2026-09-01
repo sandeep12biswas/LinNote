@@ -1,7 +1,15 @@
 import { act, useCallback, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { isPointInsideSegment, nextZIndex, SegmentLayer, type CanvasPoint, type SegmentBlockData } from "./SegmentLayer";
+import { simulateResize } from "../vitest.setup";
+import {
+  isPointInsideSegment,
+  MIN_SEGMENT_WIDTH,
+  nextZIndex,
+  SegmentLayer,
+  type CanvasPoint,
+  type SegmentBlockData,
+} from "./SegmentLayer";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -66,6 +74,14 @@ function Harness({ pointerPosition }: { pointerPosition: { x: number; y: number 
     setSegments((current) => current.map((segment) => (segment.id === id ? { ...segment, x, y } : segment)));
   }, []);
 
+  const handleHeightChange = useCallback((id: string, height: number) => {
+    setSegments((current) => current.map((segment) => (segment.id === id ? { ...segment, height } : segment)));
+  }, []);
+
+  const handleResize = useCallback((id: string, x: number, width: number) => {
+    setSegments((current) => current.map((segment) => (segment.id === id ? { ...segment, x, width } : segment)));
+  }, []);
+
   return (
     <SegmentLayer
       segments={segments}
@@ -73,6 +89,8 @@ function Harness({ pointerPosition }: { pointerPosition: { x: number; y: number 
       onCreateSegment={handleCreate}
       onSegmentContentChange={handleContentChange}
       onMoveSegment={handleMove}
+      onHeightChange={handleHeightChange}
+      onResizeSegment={handleResize}
       screenToCanvas={identityScreenToCanvas}
     />
   );
@@ -121,6 +139,12 @@ function DrawHarness({
   const handleMove = useCallback((id: string, x: number, y: number) => {
     setSegments((current) => current.map((segment) => (segment.id === id ? { ...segment, x, y } : segment)));
   }, []);
+  const handleHeightChange = useCallback((id: string, height: number) => {
+    setSegments((current) => current.map((segment) => (segment.id === id ? { ...segment, height } : segment)));
+  }, []);
+  const handleResize = useCallback((id: string, x: number, width: number) => {
+    setSegments((current) => current.map((segment) => (segment.id === id ? { ...segment, x, width } : segment)));
+  }, []);
   const handleReady = useCallback(
     (arm: () => void) => {
       controller.armCreateVisible = arm;
@@ -141,6 +165,8 @@ function DrawHarness({
       onCreateSegment={handleCreate}
       onSegmentContentChange={handleContentChange}
       onMoveSegment={handleMove}
+      onHeightChange={handleHeightChange}
+      onResizeSegment={handleResize}
       screenToCanvas={identityScreenToCanvas}
       onCreateVisibleSegmentReady={handleReady}
       setPanSuppressed={setPanSuppressed}
@@ -204,6 +230,8 @@ describe("SegmentLayer: rendering existing segments", () => {
           onCreateSegment={() => {}}
           onSegmentContentChange={() => {}}
           onMoveSegment={() => {}}
+          onHeightChange={() => {}}
+          onResizeSegment={() => {}}
           screenToCanvas={identityScreenToCanvas}
         />
       );
@@ -469,5 +497,108 @@ describe("SegmentLayer: drag/reposition an existing segment (NTA-39)", () => {
     expect(proseAfter?.textContent).toBe("Hello"); // content byte-identical
     expect(block.style.left).toBe("150px"); // 50 + (160 - 60)
     expect(block.style.top).toBe("150px");
+  });
+});
+
+describe("SegmentLayer: manual-resize width with reflow (NTA-40)", () => {
+  it("dragging the right resize handle changes only the width, suppressing then releasing pan", () => {
+    const controller = makeController();
+    const segment = makeSegment({ id: "seg-1", visibility: "visible", x: 50, y: 50, width: 100, height: 30 });
+    mount(<DrawHarness controller={controller} initialSegments={[segment]} />);
+    const handle = container!.querySelector(".segment-block__resize-handle--right")!;
+
+    dispatchPointerEvent(handle, "pointerdown", 150, 50); // right edge, at x = 50 + 100
+    dispatchPointerEvent(window, "pointermove", 180, 50); // +30
+    dispatchPointerEvent(window, "pointerup", 180, 50);
+
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+    expect(block.style.width).toBe("130px");
+    expect(block.style.left).toBe("50px"); // unchanged
+    expect(block.style.top).toBe("50px"); // unchanged — a resize never repositions vertically
+    expect(controller.panSuppressedCalls).toEqual([true, false]);
+  });
+
+  it("dragging the left resize handle changes width and x together, keeping the right edge fixed", () => {
+    const controller = makeController();
+    const segment = makeSegment({ id: "seg-1", visibility: "visible", x: 50, y: 50, width: 100, height: 30 });
+    mount(<DrawHarness controller={controller} initialSegments={[segment]} />);
+    const handle = container!.querySelector(".segment-block__resize-handle--left")!;
+
+    dispatchPointerEvent(handle, "pointerdown", 50, 50);
+    dispatchPointerEvent(window, "pointermove", 70, 50); // left edge moves right by 20 -> width shrinks by 20
+    dispatchPointerEvent(window, "pointerup", 70, 50);
+
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+    expect(block.style.width).toBe("80px"); // 100 - 20
+    expect(block.style.left).toBe("70px"); // 50 + 20
+    // right edge (x + width) unchanged: 70 + 80 === 50 + 100 === 150
+  });
+
+  it("clamps width to MIN_SEGMENT_WIDTH, keeping the right edge fixed even once clamped from the left handle", () => {
+    const controller = makeController();
+    const segment = makeSegment({ id: "seg-1", visibility: "visible", x: 50, y: 50, width: 100, height: 30 });
+    mount(<DrawHarness controller={controller} initialSegments={[segment]} />);
+    const handle = container!.querySelector(".segment-block__resize-handle--left")!;
+
+    dispatchPointerEvent(handle, "pointerdown", 50, 50);
+    dispatchPointerEvent(window, "pointermove", 500, 50); // dragged the left edge way past the right edge
+    dispatchPointerEvent(window, "pointerup", 500, 50);
+
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+    expect(block.style.width).toBe(`${MIN_SEGMENT_WIDTH}px`);
+    expect(block.style.left).toBe(`${50 + 100 - MIN_SEGMENT_WIDTH}px`); // right edge still at 150
+  });
+
+  it("grabbing a resize handle does not also start a reposition drag on the wrapper", () => {
+    const controller = makeController();
+    const segment = makeSegment({ id: "seg-1", visibility: "visible", x: 50, y: 50, width: 100, height: 30 });
+    mount(<DrawHarness controller={controller} initialSegments={[segment]} />);
+    const handle = container!.querySelector(".segment-block__resize-handle--right")!;
+
+    dispatchPointerEvent(handle, "pointerdown", 150, 50);
+    dispatchPointerEvent(window, "pointermove", 150, 90); // moved vertically too
+    dispatchPointerEvent(window, "pointerup", 150, 90);
+
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+    expect(block.style.top).toBe("50px"); // a resize never moves y, even if the pointer does
+  });
+});
+
+describe("SegmentLayer: auto-grow height persistence (NTA-40)", () => {
+  /** A minimal harness whose `segments` never change on its own — isolates `onHeightChange`'s "only when it actually differs" behavior from any store round-trip. */
+  function HeightHarness({ initialHeight, onHeights }: { initialHeight: number; onHeights: (height: number) => void }) {
+    const [segments] = useState<SegmentBlockData[]>([makeSegment({ id: "seg-1", visibility: "visible", height: initialHeight })]);
+    return (
+      <SegmentLayer
+        segments={segments}
+        pointerPosition={null}
+        onCreateSegment={() => {}}
+        onSegmentContentChange={() => {}}
+        onMoveSegment={() => {}}
+        onHeightChange={(_id, height) => onHeights(height)}
+        onResizeSegment={() => {}}
+        screenToCanvas={identityScreenToCanvas}
+      />
+    );
+  }
+
+  it("calls onHeightChange when the observed height differs from the segment's currently-known height", () => {
+    const heights: number[] = [];
+    mount(<HeightHarness initialHeight={32} onHeights={(height) => heights.push(height)} />);
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+
+    act(() => simulateResize(block, 96));
+
+    expect(heights).toEqual([96]);
+  });
+
+  it("does not call onHeightChange when the observed height matches the currently-known height", () => {
+    const heights: number[] = [];
+    mount(<HeightHarness initialHeight={32} onHeights={(height) => heights.push(height)} />);
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+
+    act(() => simulateResize(block, 32));
+
+    expect(heights).toEqual([]);
   });
 });

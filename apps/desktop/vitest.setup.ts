@@ -17,3 +17,19 @@ for (const name of ["setPointerCapture", "releasePointerCapture"] as const) {
 if (!("hasPointerCapture" in Element.prototype)) {
   Object.defineProperty(Element.prototype, "hasPointerCapture", { value: () => false, configurable: true });
 }
+
+// jsdom also doesn't implement `ResizeObserver` (used by
+// plugins/element-text-segment's SegmentLayer.tsx, NTA-40's auto-grow
+// height, whenever a segment renders here e.g. in
+// SegmentLayerHost.test.tsx) — a no-op stub is enough here: unlike that
+// plugin's own vitest.setup.ts, no desktop-level test needs to manually
+// simulate a resize, just avoid the constructor throwing.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  class NoopResizeObserver {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  (globalThis as unknown as { ResizeObserver: typeof ResizeObserver }).ResizeObserver =
+    NoopResizeObserver as unknown as typeof ResizeObserver;
+}
