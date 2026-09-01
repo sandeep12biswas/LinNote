@@ -25,7 +25,13 @@
 // page" for whichever page is currently open (../store's `activePageId`),
 // each segment clickable. It renders nothing when no page is open; the
 // canvas region itself is still the Phase 3 (NTA-32) placeholder.
+//
+// NTA-54: a "Trash" toggle next to the Folder Tree pane's label opens
+// `TrashPane` (./TrashPane.tsx) as an overlay above the pane split —
+// structural, not a plugin contribution, so it lives here rather than
+// going through the menu bar's registry-driven contributions.
 
+import { useState } from "react";
 import { buildMenuBar, buildToolbar } from "./index";
 import { MenuBar } from "./MenuBar";
 import { Toolbar } from "./Toolbar";
@@ -33,6 +39,7 @@ import { PluginsStatusPanel } from "./PluginsStatusPanel";
 import { FolderTreePane } from "./FolderTreePane";
 import { PageListPane } from "./PageListPane";
 import { BreadcrumbTrail } from "./BreadcrumbTrail";
+import { TrashPane } from "./TrashPane";
 import type { RegisteredPlugin } from "../registry";
 
 export interface AppShellProps {
@@ -43,6 +50,7 @@ export interface AppShellProps {
 export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
   const menuBarModel = buildMenuBar(registeredPlugins);
   const toolbarModel = buildToolbar(registeredPlugins);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   return (
     <div className="app-shell">
@@ -50,7 +58,12 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
       <Toolbar model={toolbarModel} onRunCommand={onRunCommand} />
       <div className="app-shell__main">
         <section className="app-shell__pane app-shell__pane--folder-tree" aria-label="Folder Tree">
-          <h2 className="app-shell__pane-label">Folder Tree</h2>
+          <div className="app-shell__pane-header">
+            <h2 className="app-shell__pane-label">Folder Tree</h2>
+            <button type="button" className="app-shell__trash-toggle" onClick={() => setTrashOpen(true)}>
+              Trash
+            </button>
+          </div>
           <FolderTreePane />
         </section>
         <section className="app-shell__pane app-shell__pane--page-list" aria-label="Page List">
@@ -63,6 +76,7 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
         </section>
       </div>
       <PluginsStatusPanel registeredPlugins={registeredPlugins} />
+      {trashOpen && <TrashPane onClose={() => setTrashOpen(false)} />}
     </div>
   );
 }

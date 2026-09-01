@@ -51,9 +51,13 @@
 // (./structuralUndoStack.ts, ./workspaceCommands.ts) that
 // `FolderTreePane` now routes its create/rename/move/delete through.
 //
-// TODO(NTA-53/54): same-parent fractional-index drag-reorder polish and
-// a trash UI are separate subtasks of the same parent story (NTA-43) —
-// not built here.
+// NTA-54 adds the Trash UI: `buildTrashList` (./trash.ts) + `TrashPane`
+// (./TrashPane.tsx) browse/restore/permanently-delete trashed nodes
+// (cascade soft-delete itself was already NTA-49's `deleteNode`), plus a
+// background sweep purging anything past the retention window.
+//
+// TODO(NTA-53): same-parent fractional-index drag-reorder polish is a
+// separate subtask of the same parent story (NTA-43) — not built here.
 
 import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { RegisteredPlugin } from "../registry";
@@ -222,3 +226,7 @@ export {
   createMoveNodeCommand,
   createDeleteNodeCommand,
 } from "./workspaceCommands";
+export { TrashPane } from "./TrashPane";
+export type { TrashPaneProps } from "./TrashPane";
+export { buildTrashList } from "./trash";
+export type { TrashRow } from "./trash";
