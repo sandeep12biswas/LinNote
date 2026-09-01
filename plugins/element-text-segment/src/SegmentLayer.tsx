@@ -101,6 +101,28 @@
 // `height` in the inline style, only `minHeight`), verified by
 // inspection rather than a rendering test. Width-resize, by contrast,
 // is pure coordinate math like NTA-39's drag and is fully testable.
+//
+// 6. Non-overlap, block-and-snap (NTA-41): every gesture that can move
+//    or grow a segment's rect — drag (NTA-39), resize (NTA-40), *and*
+//    both creation gestures (NTA-37/38, via the one `createSegmentAt`
+//    choke point they both already funnel through) — runs its candidate
+//    rect through collision resolution against every *other* segment's
+//    rect, gap-expanded by `SEGMENT_GAP`, before committing it:
+//    - Drag and creation use `resolveNonOverlap` — a standard 2D
+//      "minimum translation vector" push-out: if the candidate overlaps
+//      a gap-expanded neighbor, it's nudged out along whichever axis
+//      needs the smaller correction, so a diagonal drag naturally
+//      slides along a blocking neighbor rather than just freezing. A
+//      few relaxation passes across all neighbors, not a full physics
+//      solver — enough for a handful of segments on one page.
+//    - Resize uses a simpler 1D clamp (`maxWidthBeforeCollision`): a
+//      resize only ever moves one edge and never touches `y`, so it
+//      just caps how far that edge can grow toward a
+//      vertically-overlapping neighbor in that direction, leaving the
+//      *fixed* edge exactly where NTA-40 already puts it.
+//    This is pure coordinate math, no DOM/CSS involved — unlike NTA-40's
+//    height measurement, it's fully unit-testable without jsdom's
+//    layout limitations.
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -144,6 +166,108 @@ export const DEFAULT_SEGMENT_HEIGHT = 32;
 
 /** Width resize (NTA-40) never shrinks a segment below this — must match `.segment-block`'s own CSS `min-width` (apps/desktop/src/App.css); the two can't share a single source of truth across a TS/CSS boundary, so keep them in sync by hand. */
 export const MIN_SEGMENT_WIDTH = 40;
+
+/** The minimum canvas-space gap always kept between two segments' borders (NTA-41's "small visible padding gap"). */
+export const SEGMENT_GAP = 6;
+
+/** A segment's bounding box in canvas-space — the shape every non-overlap function below works with, whether the source is a real `SegmentBlockData` or a not-yet-committed candidate. */
+export interface SegmentRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function toRect(segment: SegmentBlockData): SegmentRect {
+  return { x: segment.x, y: segment.y, width: segment.width, height: segment.height };
+}
+
+/** Every other segment's rect — `resolveNonOverlap`/`maxWidthBeforeCollision`'s neighbor list, excluding whichever segment (if any) is itself being moved/resized. */
+function otherRects(segments: SegmentBlockData[], excludeId?: string): SegmentRect[] {
+  return segments.filter((segment) => segment.id !== excludeId).map(toRect);
+}
+
+function rectsOverlap(a: SegmentRect, b: SegmentRect): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+/**
+ * Pushes `rect` out of `obstacle` along whichever axis needs the
+ * smaller correction (the standard "minimum translation vector"
+ * approach to simple 2D collision resolution) — a no-op if they don't
+ * actually overlap.
+ */
+function pushOutOf(rect: SegmentRect, obstacle: SegmentRect): SegmentRect {
+  if (!rectsOverlap(rect, obstacle)) return rect;
+
+  const overlapLeft = rect.x + rect.width - obstacle.x; // rect's right edge, past obstacle's left edge
+  const overlapRight = obstacle.x + obstacle.width - rect.x; // obstacle's right edge, past rect's left edge
+  const overlapTop = rect.y + rect.height - obstacle.y;
+  const overlapBottom = obstacle.y + obstacle.height - rect.y;
+
+  const minOverlapX = Math.min(overlapLeft, overlapRight);
+  const minOverlapY = Math.min(overlapTop, overlapBottom);
+
+  if (minOverlapX < minOverlapY) {
+    return overlapLeft < overlapRight ? { ...rect, x: obstacle.x - rect.width } : { ...rect, x: obstacle.x + obstacle.width };
+  }
+  return overlapTop < overlapBottom ? { ...rect, y: obstacle.y - rect.height } : { ...rect, y: obstacle.y + obstacle.height };
+}
+
+/**
+ * Resolves `candidate` against every rect in `others`, each expanded by
+ * `gap` on all sides — used for both drag (NTA-39) and segment creation
+ * (NTA-37/38, via `createSegmentAt`). Width/height are never changed,
+ * only `x`/`y`. A few relaxation passes so resolving one neighbor can't
+ * silently reintroduce overlap with another (not a full physics solver
+ * — see this file's header comment).
+ */
+export function resolveNonOverlap(candidate: SegmentRect, others: SegmentRect[], gap: number = SEGMENT_GAP): SegmentRect {
+  let rect = candidate;
+  for (let pass = 0; pass < 3; pass++) {
+    for (const other of others) {
+      const obstacle: SegmentRect = {
+        x: other.x - gap,
+        y: other.y - gap,
+        width: other.width + gap * 2,
+        height: other.height + gap * 2,
+      };
+      rect = pushOutOf(rect, obstacle);
+    }
+  }
+  return rect;
+}
+
+/**
+ * For a resize whose fixed edge sits at `fixedEdge` and whose moving
+ * edge grows toward `direction`, the largest width achievable before
+ * that moving edge would cross a gap-expanded neighbor that overlaps
+ * `[y, y + height]` — `Infinity` if nothing blocks it, clamped to at
+ * least `MIN_SEGMENT_WIDTH`. Used by NTA-40's resize gesture; a resize
+ * never touches `y`, so this only needs the 1D case, unlike drag's 2D
+ * `resolveNonOverlap`.
+ */
+export function maxWidthBeforeCollision(
+  fixedEdge: number,
+  direction: "left" | "right",
+  y: number,
+  height: number,
+  others: SegmentRect[],
+  gap: number = SEGMENT_GAP,
+): number {
+  let max = Infinity;
+  for (const other of others) {
+    const noVerticalOverlap = other.y + other.height <= y - gap || other.y >= y + height + gap;
+    if (noVerticalOverlap) continue;
+
+    if (direction === "right" && other.x > fixedEdge) {
+      max = Math.min(max, other.x - gap - fixedEdge);
+    } else if (direction === "left" && other.x + other.width < fixedEdge) {
+      max = Math.min(max, fixedEdge - (other.x + other.width + gap));
+    }
+  }
+  return Math.max(MIN_SEGMENT_WIDTH, max);
+}
 
 /** True if `point` (canvas-space) falls within `segment`'s bounding box. */
 export function isPointInsideSegment(point: CanvasPoint, segment: SegmentBlockData): boolean {
@@ -242,20 +366,30 @@ export function SegmentLayer({
   drawArmedRef.current = drawArmed;
   const dragStartRef = useRef<CanvasPoint | null>(null);
 
-  /** Builds, commits, and queues autofocus for a new segment at `point` — the one place both creation gestures below construct a `SegmentBlockData`. */
+  /**
+   * Builds, commits, and queues autofocus for a new segment at `point`
+   * — the one place both creation gestures below construct a
+   * `SegmentBlockData`. The candidate rect is run through
+   * `resolveNonOverlap` (NTA-41) before committing, so a segment
+   * created right next to (not just on top of) an existing one doesn't
+   * land overlapping it.
+   */
   function createSegmentAt(
     point: CanvasPoint,
     options: { visibility: SegmentBlockData["visibility"]; firstChar?: string; width?: number; height?: number },
   ) {
     const currentSegments = segmentsRef.current;
+    const width = options.width ?? DEFAULT_SEGMENT_WIDTH;
+    const height = options.height ?? DEFAULT_SEGMENT_HEIGHT;
+    const resolved = resolveNonOverlap({ x: point.x, y: point.y, width, height }, otherRects(currentSegments));
     const segment: SegmentBlockData = {
       id: `segment-${crypto.randomUUID()}`,
       type: "segment",
       visibility: options.visibility,
-      x: point.x,
-      y: point.y,
-      width: options.width ?? DEFAULT_SEGMENT_WIDTH,
-      height: options.height ?? DEFAULT_SEGMENT_HEIGHT,
+      x: resolved.x,
+      y: resolved.y,
+      width,
+      height,
       content: undefined,
       zIndex: nextZIndex(currentSegments),
     };
@@ -400,27 +534,41 @@ export function SegmentLayer({
     function handlePointerMove(event: PointerEvent) {
       const dragging = draggingRef.current;
       if (dragging) {
+        const segment = segmentsRef.current.find((candidate) => candidate.id === dragging.id);
+        if (!segment) return;
         const point = screenToCanvasRef.current(event.clientX, event.clientY);
-        onMoveSegmentRef.current(
-          dragging.id,
-          dragging.startX + (point.x - dragging.startCanvas.x),
-          dragging.startY + (point.y - dragging.startCanvas.y),
-        );
+        const candidate: SegmentRect = {
+          x: dragging.startX + (point.x - dragging.startCanvas.x),
+          y: dragging.startY + (point.y - dragging.startCanvas.y),
+          width: segment.width,
+          height: segment.height,
+        };
+        // NTA-41: never let a drag land the segment overlapping a neighbor.
+        const resolved = resolveNonOverlap(candidate, otherRects(segmentsRef.current, dragging.id));
+        onMoveSegmentRef.current(dragging.id, resolved.x, resolved.y);
         return;
       }
 
       const resizing = resizingRef.current;
       if (resizing) {
+        const segment = segmentsRef.current.find((candidate) => candidate.id === resizing.id);
+        if (!segment) return;
+        const others = otherRects(segmentsRef.current, resizing.id);
         const dx = screenToCanvasRef.current(event.clientX, 0).x - resizing.startCanvasX;
         if (resizing.edge === "right") {
-          const width = Math.max(MIN_SEGMENT_WIDTH, resizing.startWidth + dx);
+          // NTA-41: never let the moving edge grow past a neighbor to the right.
+          const maxWidth = maxWidthBeforeCollision(resizing.startX, "right", segment.y, segment.height, others);
+          const width = Math.min(maxWidth, Math.max(MIN_SEGMENT_WIDTH, resizing.startWidth + dx));
           onResizeSegmentRef.current(resizing.id, resizing.startX, width);
         } else {
           // Left edge: width shrinks as it moves right (positive dx), and
           // x is *derived* from the new width so that x + width — the
-          // right edge — stays exactly fixed, clamped or not.
-          const width = Math.max(MIN_SEGMENT_WIDTH, resizing.startWidth - dx);
-          const x = resizing.startX + (resizing.startWidth - width);
+          // right edge — stays exactly fixed, clamped or not. NTA-41's
+          // collision clamp uses that same fixed right edge.
+          const rightEdge = resizing.startX + resizing.startWidth;
+          const maxWidth = maxWidthBeforeCollision(rightEdge, "left", segment.y, segment.height, others);
+          const width = Math.min(maxWidth, Math.max(MIN_SEGMENT_WIDTH, resizing.startWidth - dx));
+          const x = rightEdge - width;
           onResizeSegmentRef.current(resizing.id, x, width);
         }
       }
