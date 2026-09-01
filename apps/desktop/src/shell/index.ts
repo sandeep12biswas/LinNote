@@ -40,10 +40,13 @@
 // folder's pages with subpages nested. Both read/write the in-memory
 // `WorkspaceNode` tree store in ../workspace/ (NTA-49).
 //
-// TODO(NTA-52/53/54/55): structural-operation undo stack, same-parent
-// fractional-index drag-reorder polish, a trash UI, and the breadcrumb
-// trail above the editor canvas are separate subtasks of the same parent
-// story (NTA-43) — not built here.
+// NTA-52 adds the structural-operation undo/redo stack
+// (./structuralUndoStack.ts, ./workspaceCommands.ts) that
+// `FolderTreePane` now routes its create/rename/move/delete through.
+//
+// TODO(NTA-53/54/55): same-parent fractional-index drag-reorder polish,
+// a trash UI, and the breadcrumb trail above the editor canvas are
+// separate subtasks of the same parent story (NTA-43) — not built here.
 
 import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { RegisteredPlugin } from "../registry";
@@ -201,3 +204,11 @@ export type { FolderTreeRow } from "./folderTree";
 export { PageListPane } from "./PageListPane";
 export { buildPageList } from "./pageList";
 export type { PageListRow } from "./pageList";
+export { useStructuralUndoStore, pushCommand, popUndo, popRedo } from "./structuralUndoStack";
+export type { Command, UndoStackState } from "./structuralUndoStack";
+export {
+  createCreateNodeCommand,
+  createRenameNodeCommand,
+  createMoveNodeCommand,
+  createDeleteNodeCommand,
+} from "./workspaceCommands";
