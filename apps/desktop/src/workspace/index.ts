@@ -27,16 +27,18 @@
 // (unchanged here) with undo-able `Command`s. `FolderTreePane`
 // (../shell/FolderTreePane.tsx) routes through that stack instead of
 // calling this store's create/rename/move/delete directly.
-// TODO(NTA-53): `moveNode`'s ordering only supports "append to the end"
-// or a caller-supplied `beforeSiblingId` — full fractional-index
-// same-parent drag-reorder polish is that subtask, not this one.
+// NTA-53: `moveNode` supports precise same-parent drag-reorder via
+// `beforeSiblingId` (any position, not just "append to the end"), and
+// once a repeatedly-squeezed key grows past `REBALANCE_KEY_LENGTH_THRESHOLD`
+// it triggers `rebalanceSiblings` automatically — §5.3's "occasional
+// rebalance once keys get unreasonably long".
 // NTA-54: `deleteNode` below cascades the soft delete (`trashedAt`) to
 // every descendant, per §3's "Structural operations" note. This file
 // also adds the rest of §5.5's trash model — `getTrashedNodes`,
 // `restoreNode`, `purgeNode`, `emptyTrash`, `purgeExpiredTrash` — that
 // ../shell/TrashPane.tsx (browse/restore/permanently-delete) consumes.
 
-import { generateKeyBetween } from "fractional-indexing";
+import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import { create } from "zustand";
 import type { NodeType, WorkspaceNode } from "../types";
 import { createSeedWorkspaceNodes } from "./mockData";
@@ -148,8 +150,11 @@ export interface MoveNodeOptions {
    * Insert before this sibling's current position under `newParentId`.
    * Omitted (or not found among the new parent's children) appends to
    * the end — the common "drop onto a folder to reparent" case that the
-   * Folder Tree pane (NTA-50) uses; precise same-parent reorder-by-drag
-   * is NTA-53.
+   * Folder Tree pane (NTA-50) uses. A caller can also position `id`
+   * immediately *after* a given sibling by passing that sibling's own
+   * current next-sibling id here — see `resolveDrop` in
+   * ../shell/folderTree.ts, which does exactly that for same-parent
+   * drag-to-reorder (NTA-53).
    */
   beforeSiblingId?: string;
 }
@@ -161,6 +166,14 @@ export interface MoveNodeOptions {
  * its own descendants (would disconnect that subtree from the tree
  * entirely), and refuses to give a `notebook` a non-null parent (§3:
  * "parentId: null only for root-level notebooks").
+ *
+ * When the newly-generated key grows past `REBALANCE_KEY_LENGTH_THRESHOLD`
+ * (repeatedly squeezing a key into the same gap between two neighbors —
+ * the pathological case for any fractional-indexing scheme), this
+ * rewrites every sibling's key evenly via `rebalanceSiblings` before
+ * returning, per §5.3's "occasional rebalance once keys get unreasonably
+ * long". That's the exception, not the common path: ordinary moves stay
+ * the single-node write §5.3 asks for.
  */
 export function moveNode(
   nodes: WorkspaceNode[],
@@ -180,14 +193,66 @@ export function moveNode(
 
   const siblings = getChildren(nodes, newParentId, { includeTrashed: true }).filter((n) => n.id !== id);
   const beforeIndex = options.beforeSiblingId ? siblings.findIndex((n) => n.id === options.beforeSiblingId) : -1;
-  const before = beforeIndex > 0 ? siblings[beforeIndex - 1].order : null;
+  // beforeIndex === -1 covers both "no beforeSiblingId given" and "given,
+  // but not found among the new parent's current children" — either way,
+  // per `MoveNodeOptions.beforeSiblingId`'s doc, that means append to the
+  // end: anchor `before` to the current last sibling (mirrors createNode's
+  // own append-to-end `lastOrder` pattern above), not `null`, which would
+  // instead generate a key sorting *before* every existing sibling.
+  const before =
+    beforeIndex > 0
+      ? siblings[beforeIndex - 1].order
+      : beforeIndex === -1 && siblings.length > 0
+        ? siblings[siblings.length - 1].order
+        : null;
   const after = beforeIndex >= 0 ? siblings[beforeIndex].order : null;
+  const order = generateKeyBetween(before, after);
 
-  return updateNode(nodes, id, {
+  const moved = updateNode(nodes, id, {
     parentId: newParentId,
-    order: generateKeyBetween(before, after),
+    order,
     updatedAt: new Date().toISOString(),
   });
+
+  return needsRebalance(order) ? rebalanceSiblings(moved, newParentId) : moved;
+}
+
+/**
+ * `generateKeyBetween` keys grow a little longer with every insert
+ * squeezed into the same gap (e.g. repeatedly dragging a node back
+ * between the same two siblings) — an inherent property of fractional
+ * indexing, not a bug. This is the length past which §5.3 calls that
+ * "unreasonably long" and asks for a rebalance; ordinary use (appending,
+ * or a handful of same-gap reorders) stays well under it.
+ */
+export const REBALANCE_KEY_LENGTH_THRESHOLD = 60;
+
+/** Whether `order` has grown past `REBALANCE_KEY_LENGTH_THRESHOLD` and is due for a rebalance. */
+export function needsRebalance(order: string): boolean {
+  return order.length > REBALANCE_KEY_LENGTH_THRESHOLD;
+}
+
+/**
+ * Regenerates fresh, evenly-spaced `order` keys for every direct child
+ * of `parentId` (trashed nodes included, so a rebalance never disturbs a
+ * trashed node's position relative to its still-live siblings, only
+ * shortens its key), preserving everyone's current relative order — the
+ * "occasional rebalance" half of §5.3's ordering note. A full
+ * sibling-group write, unlike every other structural op in this file;
+ * `moveNode` above is the only caller, and only once `needsRebalance`
+ * says a key has actually grown unreasonable.
+ */
+export function rebalanceSiblings(nodes: WorkspaceNode[], parentId: string | null): WorkspaceNode[] {
+  const siblings = getChildren(nodes, parentId, { includeTrashed: true });
+  if (siblings.length === 0) return nodes;
+
+  const freshOrders = generateNKeysBetween(null, null, siblings.length);
+  const now = new Date().toISOString();
+  const nextOrderById = new Map(siblings.map((sibling, index) => [sibling.id, freshOrders[index]]));
+
+  return nodes.map((n) =>
+    nextOrderById.has(n.id) ? { ...n, order: nextOrderById.get(n.id) as string, updatedAt: now } : n,
+  );
 }
 
 /** Soft-deletes `id` and cascades `trashedAt` to every descendant, in one pass (§3's cascade note). */

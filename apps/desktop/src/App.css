@@ -318,6 +318,17 @@ button {
   outline-offset: -2px;
 }
 
+/* NTA-53: same-parent drag-to-reorder — a thin line above/below the row
+   being dropped beside, distinct from --drop-target's full outline
+   (reparent-into). */
+.folder-tree__row--drop-before {
+  box-shadow: inset 0 2px 0 0 #2563eb;
+}
+
+.folder-tree__row--drop-after {
+  box-shadow: inset 0 -2px 0 0 #2563eb;
+}
+
 .folder-tree__disclosure {
   flex: 0 0 auto;
   width: 1.2em;

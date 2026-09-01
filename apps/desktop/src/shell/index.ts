@@ -51,6 +51,11 @@
 // (./structuralUndoStack.ts, ./workspaceCommands.ts) that
 // `FolderTreePane` now routes its create/rename/move/delete through.
 //
+// NTA-53 adds precise same-parent drag-to-reorder to `FolderTreePane`
+// (`canDrop`/`resolveDrop` in ./folderTree.ts) on top of NTA-50's
+// drop-to-reparent, plus automatic order-key rebalancing in
+// ../workspace/index.ts's `moveNode`.
+//
 // NTA-54 adds the Trash UI: `buildTrashList` (./trash.ts) + `TrashPane`
 // (./TrashPane.tsx) browse/restore/permanently-delete trashed nodes
 // (cascade soft-delete itself was already NTA-49's `deleteNode`), plus a
@@ -63,9 +68,6 @@
 // tree/page list only ever mounts the rows currently scrolled into view;
 // `SearchBox` (./SearchBox.tsx) + `./searchNavigation.ts` give the new
 // incremental search index (../search/) a place in the running app.
-//
-// TODO(NTA-53): same-parent fractional-index drag-reorder polish is a
-// separate subtask of the same parent story (NTA-43) — not built here.
 
 import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { RegisteredPlugin } from "../registry";
@@ -218,8 +220,8 @@ export type { AppShellProps } from "./AppShell";
 export { PluginsStatusPanel } from "./PluginsStatusPanel";
 export type { PluginsStatusPanelProps } from "./PluginsStatusPanel";
 export { FolderTreePane } from "./FolderTreePane";
-export { buildFolderTree, canReparent } from "./folderTree";
-export type { FolderTreeRow } from "./folderTree";
+export { buildFolderTree, canDrop, canReparent, resolveDrop } from "./folderTree";
+export type { DropPosition, FolderTreeRow, ResolvedDrop } from "./folderTree";
 export { PageListPane } from "./PageListPane";
 export { buildPageList } from "./pageList";
 export type { PageListRow } from "./pageList";

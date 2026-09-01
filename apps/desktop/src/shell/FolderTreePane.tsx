@@ -1,9 +1,10 @@
 // The rendering half of NTA-50 — takes the `FolderTreeRow[]` model built
 // by `buildFolderTree` (./folderTree.ts) and renders it: expand/collapse
 // disclosure triangles, click-to-select (writes `selectedFolderId` in
-// ../store), native HTML5 drag-to-reparent with a highlighted
-// insertion-indicator row, and a right-click context menu (rename, move,
-// delete, new folder) driven by ../workspace's `useWorkspaceTreeStore`.
+// ../store), native HTML5 drag-and-drop (reparent, or same-parent
+// reorder — NTA-53) with a highlighted insertion indicator, and a
+// right-click context menu (rename, move, delete, new folder) driven by
+// ../workspace's `useWorkspaceTreeStore`.
 //
 // Mirrors MenuBar.tsx/Toolbar.tsx's decoupling: this component reads and
 // writes the workspace tree store directly (there's no command-bus
@@ -18,9 +19,11 @@
 // text-undo should win instead) and the Undo/Redo buttons drive that
 // stack.
 //
-// TODO(NTA-53): dropping a node only appends it to the end of the target
-// folder's children (or, via the "Move" menu, likewise) — same-parent
-// drag-to-reorder with precise sibling positioning is that subtask.
+// NTA-53: dropping a node onto the middle of a row still reparents it
+// (appended to the end of that row's children, as before); dropping onto
+// a row's top/bottom edge now reorders it to sit immediately
+// before/after that row among its *current* siblings instead — see
+// `dropZone`/`canDrop`/`resolveDrop` below and in ./folderTree.ts.
 //
 // NTA-56: rows are rendered through `react-window`'s `FixedSizeList`
 // instead of a plain `rows.map(...)`, so a workspace with thousands of
@@ -39,7 +42,7 @@ import { FixedSizeList, type ListChildComponentProps } from "react-window";
 import type { WorkspaceNode } from "../types";
 import { useNavigationStore } from "../store";
 import { getDescendantIds, useWorkspaceTreeStore } from "../workspace";
-import { buildFolderTree, canReparent } from "./folderTree";
+import { buildFolderTree, canDrop, canReparent, resolveDrop, type DropPosition } from "./folderTree";
 import { useStructuralUndoStore } from "./structuralUndoStack";
 import {
   createCreateNodeCommand,
@@ -49,6 +52,20 @@ import {
 } from "./workspaceCommands";
 import { useElementSize } from "./useElementSize";
 import { PANE_ROW_HEIGHT } from "./virtualization";
+
+/**
+ * Splits a row's height into three drop zones: the outer quarters mean
+ * "reorder beside this row" (before/after), the middle half means
+ * "reparent into this row" — keeps the common reparent-by-dropping
+ * gesture easy to hit while still leaving room for precise reordering at
+ * a row's edges. `offsetRatio` is `0` at the row's top edge, `1` at its
+ * bottom edge.
+ */
+function dropZone(offsetRatio: number): DropPosition {
+  if (offsetRatio < 0.25) return "before";
+  if (offsetRatio > 0.75) return "after";
+  return "into";
+}
 
 type ContextMenuMode = "menu" | "move";
 
@@ -75,7 +92,7 @@ export function FolderTreePane() {
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: DropPosition } | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -127,10 +144,18 @@ export function FolderTreePane() {
     setExpandedIds((current) => new Set(current).add(targetParentId));
   }
 
-  function handleDrop(targetId: string) {
-    if (draggedId) reparent(draggedId, targetId);
+  /** Realizes a `canDrop`-legal `(targetId, position)`: reparent ("into") or same-parent reorder ("before"/"after"). */
+  function drop(id: string, targetId: string, position: DropPosition) {
+    if (!canDrop(nodes, id, targetId, position)) return;
+    const { newParentId, beforeSiblingId } = resolveDrop(nodes, id, targetId, position);
+    executeCommand(createMoveNodeCommand(id, newParentId, { beforeSiblingId }));
+    if (position === "into") setExpandedIds((current) => new Set(current).add(targetId));
+  }
+
+  function handleDrop(targetId: string, position: DropPosition) {
+    if (draggedId) drop(draggedId, targetId, position);
     setDraggedId(null);
-    setDropTargetId(null);
+    setDropIndicator(null);
   }
 
   const moveTargets =
@@ -164,10 +189,13 @@ export function FolderTreePane() {
   function renderRow({ index, style }: ListChildComponentProps) {
     const row = rows[index];
     const isDraggable = row.node.type !== "notebook";
+    const indicatorForRow = dropIndicator?.targetId === row.node.id ? dropIndicator.position : null;
     const rowClassName = [
       "folder-tree__row",
       row.node.id === selectedFolderId && "folder-tree__row--selected",
-      row.node.id === dropTargetId && "folder-tree__row--drop-target",
+      indicatorForRow === "into" && "folder-tree__row--drop-target",
+      indicatorForRow === "before" && "folder-tree__row--drop-before",
+      indicatorForRow === "after" && "folder-tree__row--drop-after",
     ]
       .filter(Boolean)
       .join(" ");
@@ -180,18 +208,26 @@ export function FolderTreePane() {
         onDragStart={() => isDraggable && setDraggedId(row.node.id)}
         onDragEnd={() => {
           setDraggedId(null);
-          setDropTargetId(null);
+          setDropIndicator(null);
         }}
         onDragOver={(e) => {
-          if (draggedId && canReparent(nodes, draggedId, row.node.id)) {
+          if (!draggedId) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const offsetRatio = (e.clientY - rect.top) / rect.height;
+          const position = dropZone(offsetRatio);
+          if (canDrop(nodes, draggedId, row.node.id, position)) {
             e.preventDefault();
-            setDropTargetId(row.node.id);
+            setDropIndicator({ targetId: row.node.id, position });
+          } else {
+            setDropIndicator((current) => (current?.targetId === row.node.id ? null : current));
           }
         }}
-        onDragLeave={() => setDropTargetId((current) => (current === row.node.id ? null : current))}
+        onDragLeave={() => setDropIndicator((current) => (current?.targetId === row.node.id ? null : current))}
         onDrop={(e) => {
           e.preventDefault();
-          handleDrop(row.node.id);
+          const rect = e.currentTarget.getBoundingClientRect();
+          const offsetRatio = (e.clientY - rect.top) / rect.height;
+          handleDrop(row.node.id, dropZone(offsetRatio));
         }}
         onClick={(e) => {
           e.stopPropagation();
