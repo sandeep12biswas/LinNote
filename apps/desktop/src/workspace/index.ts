@@ -17,7 +17,9 @@
 // unit test without React or zustand) plus a thin zustand wrapper
 // (`useWorkspaceTreeStore`) that the Folder Tree / Page List panes
 // (../shell/FolderTreePane.tsx, ../shell/PageListPane.tsx) actually
-// consume.
+// consume. `getAncestorChain` below (NTA-55) is the same kind of pure
+// tree query, consumed by the breadcrumb trail above the editor canvas
+// (../shell/breadcrumb.ts, ../shell/BreadcrumbTrail.tsx).
 //
 // TODO(NTA-52): structural operations (move/rename/delete/create) aren't
 // on their own undo stack yet — a separate subtask of the same parent
@@ -83,6 +85,22 @@ export function getDescendantIds(nodes: WorkspaceNode[], id: string): string[] {
 /** True when `maybeDescendantId` is `ancestorId` itself, or nested anywhere under it. */
 export function isSelfOrDescendant(nodes: WorkspaceNode[], ancestorId: string, maybeDescendantId: string): boolean {
   return ancestorId === maybeDescendantId || getDescendantIds(nodes, ancestorId).includes(maybeDescendantId);
+}
+
+/**
+ * The chain of ancestors from the root notebook down to `id` itself
+ * (inclusive), root-first — e.g. `[notebook, folder, ..., page]`. Powers
+ * the breadcrumb trail (NTA-55, ../shell/breadcrumb.ts): "notebook >
+ * folder > ... > page". Empty array if `id` isn't in `nodes`.
+ */
+export function getAncestorChain(nodes: WorkspaceNode[], id: string): WorkspaceNode[] {
+  const chain: WorkspaceNode[] = [];
+  let current = getNode(nodes, id);
+  while (current) {
+    chain.unshift(current);
+    current = current.parentId != null ? getNode(nodes, current.parentId) : undefined;
+  }
+  return chain;
 }
 
 export interface CreateNodeInput {

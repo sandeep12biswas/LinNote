@@ -3,6 +3,7 @@ import type { WorkspaceNode } from "../types";
 import {
   createNode,
   deleteNode,
+  getAncestorChain,
   getChildren,
   getDescendantIds,
   getNode,
@@ -80,6 +81,27 @@ describe("getNode / getDescendantIds / isSelfOrDescendant", () => {
     expect(isSelfOrDescendant(nodes, "root", "grandchild")).toBe(true);
     expect(isSelfOrDescendant(nodes, "root", "sibling")).toBe(true);
     expect(isSelfOrDescendant(nodes, "child", "sibling")).toBe(false);
+  });
+});
+
+describe("getAncestorChain", () => {
+  const nodes = [
+    makeNode({ id: "notebook", parentId: null, type: "notebook", order: "a0" }),
+    makeNode({ id: "folder", parentId: "notebook", type: "folder", order: "a0" }),
+    makeNode({ id: "page", parentId: "folder", type: "page", order: "a0" }),
+    makeNode({ id: "subpage", parentId: "page", type: "page", order: "a0" }),
+  ];
+
+  it("returns the chain from the root notebook down to the node itself, inclusive", () => {
+    expect(getAncestorChain(nodes, "subpage").map((n) => n.id)).toEqual(["notebook", "folder", "page", "subpage"]);
+  });
+
+  it("returns just the node itself for a root-level notebook", () => {
+    expect(getAncestorChain(nodes, "notebook").map((n) => n.id)).toEqual(["notebook"]);
+  });
+
+  it("returns an empty array for an unknown id", () => {
+    expect(getAncestorChain(nodes, "missing")).toEqual([]);
   });
 });
 
