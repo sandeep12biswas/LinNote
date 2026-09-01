@@ -10,6 +10,7 @@ import Color from "@tiptap/extension-color";
 import TextAlign from "@tiptap/extension-text-align";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
+import { FontSize } from "./fontSize";
 
 /**
  * A segment's persisted rich-text content — `SegmentBlock.content` in
@@ -27,7 +28,9 @@ export type RichTextDoc = JSONContent;
  * bold, italic, history, ...) plus the extensions that don't ship their
  * own `plugins/format-*` wrapper but that several format plugins need a
  * common home for — text-style + color (`core.format.font-color`),
- * text-align (`core.format.alignment`), task-list/task-item
+ * font-size (`core.format.font-size`, NTA-58 — see ./fontSize.ts for why
+ * it lives here rather than in that plugin package), text-align
+ * (`core.format.alignment`), task-list/task-item
  * (`core.format.checkbox-list`).
  *
  * Returns a fresh array on every call — TipTap extension instances are
@@ -39,6 +42,7 @@ export function createBaseExtensions(): AnyExtension[] {
     StarterKit,
     TextStyle,
     Color,
+    FontSize,
     TextAlign.configure({ types: ["heading", "paragraph"] }),
     TaskList,
     TaskItem.configure({ nested: true }),

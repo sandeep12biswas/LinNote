@@ -22,6 +22,9 @@ describe("createRichTextEditor", () => {
     // core.format.font-color / core.format.alignment / core.format.checkbox-list:
     expect(editor.schema.marks.textStyle).toBeDefined();
     expect(editor.schema.marks.textStyle.spec.attrs).toHaveProperty("color");
+    // core.format.font-size (NTA-58) — see ./fontSize.ts for why it's a
+    // base extension rather than something plugins/format-font-size layers on:
+    expect(editor.schema.marks.textStyle.spec.attrs).toHaveProperty("fontSize");
     expect(editor.schema.nodes.taskList).toBeDefined();
     expect(editor.schema.nodes.taskItem).toBeDefined();
     expect(editor.extensionManager.extensions.some((ext) => ext.name === "textAlign")).toBe(true);
@@ -90,6 +93,25 @@ describe("createRichTextEditor", () => {
 
     expect(editor.isEmpty).toBe(true);
     expect(editor.getText()).toBe("");
+
+    editor.destroy();
+  });
+
+  it("core.format.font-size: setFontSize/unsetFontSize round-trip through a real Editor", () => {
+    const editor = createRichTextEditor({
+      content: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }],
+      },
+    });
+
+    editor.commands.selectAll();
+    editor.commands.setFontSize("28px");
+    expect(editor.getAttributes("textStyle")).toMatchObject({ fontSize: "28px" });
+    expect(editor.getHTML()).toContain("font-size: 28px");
+
+    editor.commands.unsetFontSize();
+    expect(editor.getAttributes("textStyle").fontSize).toBeFalsy();
 
     editor.destroy();
   });
