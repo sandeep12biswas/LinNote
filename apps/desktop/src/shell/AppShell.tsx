@@ -3,8 +3,7 @@
 // List / Editor Canvas three-pane split filling the rest of the window.
 // Wraps `MenuBar` (./MenuBar.tsx) and `Toolbar` (./Toolbar.tsx) around
 // the panes. "Window scope (decided)" per §2: single page open at a
-// time, no tab strip, no multi-window model — the Editor Canvas pane
-// below is still a single static placeholder, not a tab strip.
+// time, no tab strip, no multi-window model.
 //
 // NTA-15 (integration): `registeredPlugins`/`onRunCommand` now come from a
 // real, activated `PluginRegistry` (../App.tsx owns building it) instead
@@ -17,14 +16,12 @@
 // NTA-49/50/51 replace what used to be static Folder Tree / Page List
 // placeholder panes with `FolderTreePane`/`PageListPane`
 // (./FolderTreePane.tsx, ./PageListPane.tsx), backed by the in-memory
-// `WorkspaceNode` tree store (../workspace/). The Editor Canvas pane
-// itself is still Phase 3 (NTA-32) — not this ticket.
+// `WorkspaceNode` tree store (../workspace/).
 //
 // NTA-55 adds `BreadcrumbTrail` (./BreadcrumbTrail.tsx) above the Editor
-// Canvas pane's own placeholder content — "notebook > folder > ... >
-// page" for whichever page is currently open (../store's `activePageId`),
-// each segment clickable. It renders nothing when no page is open; the
-// canvas region itself is still the Phase 3 (NTA-32) placeholder.
+// Canvas pane's own content — "notebook > folder > ... > page" for
+// whichever page is currently open (../store's `activePageId`), each
+// segment clickable. It renders nothing when no page is open.
 //
 // NTA-54: a "Trash" toggle next to the Folder Tree pane's label opens
 // `TrashPane` (./TrashPane.tsx) as an overlay above the pane split —
@@ -35,8 +32,15 @@
 // rendering internally (see their own doc comments); `SearchBox`
 // (./SearchBox.tsx) is new here, giving the incremental search index
 // (../search/) a place in the running app.
+//
+// NTA-33 mounts `CanvasViewport` (../canvas-core/) into the Editor Canvas
+// pane once a page is open (`useNavigationStore`'s `activePageId`),
+// replacing the static placeholder that was there since NTA-13; falls
+// back to the placeholder when no page is open.
 
 import { useState } from "react";
+import { CanvasViewport } from "../canvas-core";
+import { useNavigationStore } from "../store";
 import { buildMenuBar, buildToolbar } from "./index";
 import { MenuBar } from "./MenuBar";
 import { Toolbar } from "./Toolbar";
@@ -57,6 +61,7 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
   const menuBarModel = buildMenuBar(registeredPlugins);
   const toolbarModel = buildToolbar(registeredPlugins);
   const [trashOpen, setTrashOpen] = useState(false);
+  const activePageId = useNavigationStore((state) => state.activePageId);
 
   return (
     <div className="app-shell">
@@ -79,7 +84,11 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
         </section>
         <section className="app-shell__pane app-shell__pane--editor-canvas" aria-label="Editor Canvas">
           <BreadcrumbTrail />
-          <h2 className="app-shell__pane-label">Editor Canvas</h2>
+          {activePageId ? (
+            <CanvasViewport pageId={activePageId} />
+          ) : (
+            <h2 className="app-shell__pane-label">Editor Canvas</h2>
+          )}
         </section>
       </div>
       <PluginsStatusPanel registeredPlugins={registeredPlugins} />

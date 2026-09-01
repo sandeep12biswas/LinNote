@@ -8,11 +8,162 @@
 //   inserted elements) — distinct from the workspace-level structural undo
 //   stack (§5.5, owned by ../shell/).
 //
-// TODO(phase-3): viewport transform + infinite pan/zoom.
+// This file implements NTA-33's two foundations, split like
+// ../workspace/index.ts's own pure-functions-plus-zustand-wrapper
+// pattern (its header comment explains the split; mirrored here):
+//
+// 1. **In-memory `NotePage` store** — `useNotePageStore` below, seeded
+//    from ./mockData.ts. Persistence (`readPage`/`writePage`) is
+//    deliberately "not implemented" until Phase 8/NTA-69 (see
+//    ../persistence/index.ts), so this is in-memory only, same scope
+//    note as NTA-49's workspace tree store. `getOrCreatePage` is the
+//    pure function a page-open flow calls; `ensurePage` is the store
+//    action wrapping it (mirrors `createNode`/`useWorkspaceTreeStore` in
+//    ../workspace/index.ts) — it caches a synthesized blank page into
+//    the store on first open rather than fabricating a fresh object
+//    every call, so a newly-created page (e.g. via NTA-52's
+//    `createNode`) opens without 404-ing and stays stable across
+//    re-renders/re-opens.
+//
+// 2. **Viewport pan/zoom math** — `panViewport`/`zoomViewport` below,
+//    pure functions over the `Viewport` type; `./CanvasViewport.tsx` is
+//    the React render surface that wires pointer/wheel events to them
+//    and mounts into ../shell/AppShell.tsx's Editor Canvas pane.
+//    **Decided**: one `Viewport` per *open* page, reset to
+//    `DEFAULT_VIEWPORT` on every page switch — nothing persists a
+//    per-page pan/zoom position yet (no ticket owns that), so
+//    `CanvasViewport` just resets on its `pageId` prop changing rather
+//    than pretending a per-page viewport cache exists. Revisit if a
+//    later ticket wants "reopen a page where you left the view."
+//
 // TODO(phase-8): Command stack (§13), diff-based, capped at ~200 entries.
+
+import { create } from "zustand";
+import type { NotePage } from "../types";
+import { createSeedNotePages, DEFAULT_BACKGROUND_COLOR } from "./mockData";
+
+// ---- Viewport: pan/zoom transform (NTA-33) --------------------------------
 
 export interface Viewport {
   x: number;
   y: number;
   scale: number;
 }
+
+export const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, scale: 1 };
+
+/** Clamp bounds for `scale` — arbitrary but generous; keeps a runaway wheel delta from zooming to nothing/infinity. */
+export const MIN_SCALE = 0.1;
+export const MAX_SCALE = 8;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/** Pointer-drag pan: translates `x`/`y` by the drag delta, unaffected by `scale`. */
+export function panViewport(viewport: Viewport, dx: number, dy: number): Viewport {
+  return { ...viewport, x: viewport.x + dx, y: viewport.y + dy };
+}
+
+/**
+ * Rescales `viewport` by `factor` (>1 zooms in, <1 zooms out), anchored so
+ * the point currently under `(pointerX, pointerY)` — in the render
+ * surface's own local (screen) coordinates — stays under the pointer
+ * after the rescale, per docs/architecture.md §5's "pan/zoom rescales
+ * around the pointer position, not the canvas origin".
+ *
+ * The render surface applies `translate(x, y) scale(scale)`, so
+ * `screen = viewport.xy + canvasPoint * scale`, i.e.
+ * `canvasPoint = (screen - viewport.xy) / scale`. Solving for the new
+ * `x`/`y` that keeps `canvasPoint` fixed under the same screen point
+ * after `scale` changes to `nextScale`:
+ *
+ *   nextXY = pointerXY - (pointerXY - viewport.xy) * (nextScale / scale)
+ *
+ * `factor` is the requested change, but `nextScale` may differ after
+ * clamping to `[MIN_SCALE, MAX_SCALE]` — the *applied* ratio (not the
+ * requested `factor`) is what the anchor math above must use, or the
+ * anchor point drifts once either clamp bound is hit.
+ */
+export function zoomViewport(viewport: Viewport, pointerX: number, pointerY: number, factor: number): Viewport {
+  const nextScale = clamp(viewport.scale * factor, MIN_SCALE, MAX_SCALE);
+  const appliedFactor = nextScale / viewport.scale;
+  return {
+    x: pointerX - (pointerX - viewport.x) * appliedFactor,
+    y: pointerY - (pointerY - viewport.y) * appliedFactor,
+    scale: nextScale,
+  };
+}
+
+// ---- NotePage store (NTA-33) ----------------------------------------------
+
+/** A brand-new, empty page for `id` — same shape/defaults as ./mockData.ts's seed pages, just untitled and empty. */
+export function createBlankNotePage(id: string): NotePage {
+  const now = new Date().toISOString();
+  return {
+    id,
+    header: { title: "Untitled Page", align: "left" },
+    background: {
+      kind: "color",
+      color: DEFAULT_BACKGROUND_COLOR,
+      // TODO(NTA-35): recompute when the background color picker lands;
+      // hardcoding the seed default's own suggestion keeps this in sync
+      // with ./mockData.ts's `DEFAULT_BACKGROUND_COLOR` for now.
+      suggestedTextColor: "#0f0f0f",
+    },
+    elements: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Get-or-create: returns `id`'s existing page from `pages` unchanged, or
+ * synthesizes a fresh blank one via `createBlankNotePage` and returns it
+ * alongside a `pages` map that now caches it. Pure — like
+ * ../workspace/index.ts's `createNode`, the zustand wrapper below is what
+ * actually commits the returned `pages` back into the store.
+ */
+export function getOrCreatePage(
+  pages: Record<string, NotePage>,
+  id: string,
+): { pages: Record<string, NotePage>; page: NotePage } {
+  const existing = pages[id];
+  if (existing) return { pages, page: existing };
+  const page = createBlankNotePage(id);
+  return { pages: { ...pages, [id]: page }, page };
+}
+
+interface NotePageState {
+  pages: Record<string, NotePage>;
+  /**
+   * Get-or-create for `id`, caching a synthesized blank page into the
+   * store the first time it's requested — call this (not a plain
+   * selector) whenever a page is opened, so a page id with no seed/saved
+   * data yet (e.g. one just created via NTA-52's `createNode`) resolves
+   * to a stable object instead of a fresh one on every call/render.
+   */
+  ensurePage: (id: string) => NotePage;
+}
+
+/**
+ * The store `CanvasViewport` (./CanvasViewport.tsx) and later editor
+ * subtasks (NTA-34's header, NTA-37+'s segment blocks) read the open
+ * page's content from, seeded from ./mockData.ts on first use — mirrors
+ * ../workspace/index.ts's `useWorkspaceTreeStore`. In-memory only per
+ * this file's header comment; Phase 8/NTA-69 replaces the seed +
+ * `ensurePage` synthesis with real `PersistenceProvider.readPage()`
+ * calls behind the same shape.
+ */
+export const useNotePageStore = create<NotePageState>((set, get) => ({
+  pages: createSeedNotePages(),
+  ensurePage: (id) => {
+    const result = getOrCreatePage(get().pages, id);
+    if (result.pages !== get().pages) set({ pages: result.pages });
+    return result.page;
+  },
+}));
+
+export { createSeedNotePages } from "./mockData";
+export { CanvasViewport } from "./CanvasViewport";
+export type { CanvasViewportProps } from "./CanvasViewport";
