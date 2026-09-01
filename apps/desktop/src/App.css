@@ -156,6 +156,23 @@ button {
   opacity: 0.6;
 }
 
+.folder-tree__undo-bar {
+  display: flex;
+  gap: 0.4em;
+  margin-bottom: 0.4em;
+}
+
+.folder-tree__undo-bar button {
+  flex: 1 1 auto;
+  font-size: 0.8em;
+  padding: 0.2em 0.4em;
+}
+
+.folder-tree__undo-bar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .folder-tree__row {
   display: flex;
   align-items: center;

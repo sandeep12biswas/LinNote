@@ -21,9 +21,12 @@
 // tree query, consumed by the breadcrumb trail above the editor canvas
 // (../shell/breadcrumb.ts, ../shell/BreadcrumbTrail.tsx).
 //
-// TODO(NTA-52): structural operations (move/rename/delete/create) aren't
-// on their own undo stack yet — a separate subtask of the same parent
-// story (NTA-43) as this one.
+// NTA-52: structural operations (move/rename/delete/create) now have
+// their own undo/redo stack — ../shell/structuralUndoStack.ts +
+// ../shell/workspaceCommands.ts, which wrap the pure functions below
+// (unchanged here) with undo-able `Command`s. `FolderTreePane`
+// (../shell/FolderTreePane.tsx) routes through that stack instead of
+// calling this store's create/rename/move/delete directly.
 // TODO(NTA-53): `moveNode`'s ordering only supports "append to the end"
 // or a caller-supplied `beforeSiblingId` — full fractional-index
 // same-parent drag-reorder polish is that subtask, not this one.

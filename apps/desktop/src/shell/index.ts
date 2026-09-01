@@ -47,9 +47,13 @@
 // folder > ... > page" trail, mirroring the same pure-model /
 // React-component split.
 //
-// TODO(NTA-52/53/54): structural-operation undo stack, same-parent
-// fractional-index drag-reorder polish, and a trash UI are separate
-// subtasks of the same parent story (NTA-43) — not built here.
+// NTA-52 adds the structural-operation undo/redo stack
+// (./structuralUndoStack.ts, ./workspaceCommands.ts) that
+// `FolderTreePane` now routes its create/rename/move/delete through.
+//
+// TODO(NTA-53/54): same-parent fractional-index drag-reorder polish and
+// a trash UI are separate subtasks of the same parent story (NTA-43) —
+// not built here.
 
 import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { RegisteredPlugin } from "../registry";
@@ -210,3 +214,11 @@ export type { PageListRow } from "./pageList";
 export { BreadcrumbTrail } from "./BreadcrumbTrail";
 export { buildBreadcrumb } from "./breadcrumb";
 export type { BreadcrumbSegment } from "./breadcrumb";
+export { useStructuralUndoStore, pushCommand, popUndo, popRedo } from "./structuralUndoStack";
+export type { Command, UndoStackState } from "./structuralUndoStack";
+export {
+  createCreateNodeCommand,
+  createRenameNodeCommand,
+  createMoveNodeCommand,
+  createDeleteNodeCommand,
+} from "./workspaceCommands";

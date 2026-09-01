@@ -9,19 +9,31 @@
 // writes the workspace tree store directly (there's no command-bus
 // indirection for structural operations the way there is for
 // `onRunCommand`), since create/rename/move/delete aren't plugin
-// commands — they're this pane's own job per §5.4.
+// commands — they're this pane's own job per §5.4. NTA-52 adds one more
+// layer of indirection *within* that: every mutation goes through
+// ./structuralUndoStack.ts's `useStructuralUndoStore.execute` instead of
+// calling `useWorkspaceTreeStore`'s create/rename/move/delete directly,
+// via the `Command` factories in ./workspaceCommands.ts — Ctrl+Z/
+// Ctrl+Shift+Z below (guarded off the rename `<input>`, whose native
+// text-undo should win instead) and the Undo/Redo buttons drive that
+// stack.
 //
-// TODO(NTA-52): move/rename/delete/create below aren't undoable yet —
-// that's a separate subtask of the same parent story (NTA-43).
 // TODO(NTA-53): dropping a node only appends it to the end of the target
 // folder's children (or, via the "Move" menu, likewise) — same-parent
 // drag-to-reorder with precise sibling positioning is that subtask.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { WorkspaceNode } from "../types";
 import { useNavigationStore } from "../store";
 import { getDescendantIds, useWorkspaceTreeStore } from "../workspace";
 import { buildFolderTree, canReparent } from "./folderTree";
+import { useStructuralUndoStore } from "./structuralUndoStack";
+import {
+  createCreateNodeCommand,
+  createDeleteNodeCommand,
+  createMoveNodeCommand,
+  createRenameNodeCommand,
+} from "./workspaceCommands";
 
 type ContextMenuMode = "menu" | "move";
 
@@ -34,10 +46,12 @@ interface ContextMenuState {
 
 export function FolderTreePane() {
   const nodes = useWorkspaceTreeStore((state) => state.nodes);
-  const createNode = useWorkspaceTreeStore((state) => state.createNode);
-  const renameNode = useWorkspaceTreeStore((state) => state.renameNode);
-  const moveNode = useWorkspaceTreeStore((state) => state.moveNode);
-  const deleteNode = useWorkspaceTreeStore((state) => state.deleteNode);
+
+  const executeCommand = useStructuralUndoStore((state) => state.execute);
+  const undo = useStructuralUndoStore((state) => state.undo);
+  const redo = useStructuralUndoStore((state) => state.redo);
+  const canUndo = useStructuralUndoStore((state) => state.undoStack.length > 0);
+  const canRedo = useStructuralUndoStore((state) => state.redoStack.length > 0);
 
   const selectedFolderId = useNavigationStore((state) => state.selectedFolderId);
   const setSelectedFolder = useNavigationStore((state) => state.setSelectedFolder);
@@ -71,13 +85,14 @@ export function FolderTreePane() {
   function commitRename() {
     if (renamingId) {
       const trimmed = renameValue.trim();
-      if (trimmed) renameNode(renamingId, trimmed);
+      if (trimmed) executeCommand(createRenameNodeCommand(renamingId, trimmed));
     }
     setRenamingId(null);
   }
 
   function handleNewFolder(parentId: string) {
-    const created = createNode({ parentId, type: "folder", title: "New Folder" });
+    const { command, node: created } = createCreateNodeCommand({ parentId, type: "folder", title: "New Folder" });
+    executeCommand(command);
     setExpandedIds((current) => new Set(current).add(parentId));
     startRename(created);
   }
@@ -86,13 +101,13 @@ export function FolderTreePane() {
     const deletedIds = new Set([nodeId, ...getDescendantIds(nodes, nodeId)]);
     if (selectedFolderId && deletedIds.has(selectedFolderId)) setSelectedFolder(null);
     if (activePageId && deletedIds.has(activePageId)) setActivePage(null);
-    deleteNode(nodeId);
+    executeCommand(createDeleteNodeCommand(nodeId));
     setContextMenu(null);
   }
 
   function reparent(id: string, targetParentId: string) {
     if (!canReparent(nodes, id, targetParentId)) return;
-    moveNode(id, targetParentId);
+    executeCommand(createMoveNodeCommand(id, targetParentId));
     setExpandedIds((current) => new Set(current).add(targetParentId));
   }
 
@@ -107,8 +122,35 @@ export function FolderTreePane() {
       ? nodes.filter((n) => n.type !== "page" && n.trashedAt == null && canReparent(nodes, contextMenu.nodeId, n.id))
       : [];
 
+  // Ctrl/Cmd+Z (undo) and Ctrl/Cmd+Shift+Z (redo) for the structural
+  // stack, window-scoped like a document-level shortcut rather than
+  // requiring this pane to hold focus. Skipped while typing in the
+  // rename `<input>` (or any other text field) so its own native
+  // text-undo isn't hijacked.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      const target = e.target;
+      if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undo, redo]);
+
   return (
     <div className="folder-tree" onClick={() => setContextMenu(null)}>
+      <div className="folder-tree__undo-bar">
+        <button type="button" disabled={!canUndo} onClick={() => undo()} title="Undo (Ctrl+Z)">
+          Undo
+        </button>
+        <button type="button" disabled={!canRedo} onClick={() => redo()} title="Redo (Ctrl+Shift+Z)">
+          Redo
+        </button>
+      </div>
+
       {rows.length === 0 && <p className="folder-tree__empty">No notebooks yet.</p>}
 
       {rows.map((row) => {
