@@ -68,11 +68,22 @@ export interface CanvasCoordinates {
    * bottleneck.
    */
   pointerPosition: CanvasPoint | null;
+  /**
+   * Temporarily suppresses this viewport's own pointer-drag pan gesture
+   * — for a `children` consumer that wants exclusive use of a primary-
+   * button drag for something else (e.g. NTA-38's drag-to-draw a new
+   * segment) without a competing pan starting underneath it. Callers
+   * MUST pair `setPanSuppressed(true)` with a later
+   * `setPanSuppressed(false)` (on pointerup/cancel/unmount) — nothing
+   * else clears it automatically.
+   */
+  setPanSuppressed: (suppressed: boolean) => void;
 }
 
 const CanvasCoordinatesContext = createContext<CanvasCoordinates>({
   screenToCanvas: (x, y) => ({ x, y }),
   pointerPosition: null,
+  setPanSuppressed: () => {},
 });
 
 /** Read by anything mounted as `CanvasViewport`'s `children` — see this file's header comment. */
@@ -128,15 +139,20 @@ export function CanvasViewport({ pageId, header, children }: CanvasViewportProps
   );
 
   const [pointerPosition, setPointerPosition] = useState<CanvasPoint | null>(null);
+  const panSuppressedRef = useRef(false);
+  const setPanSuppressed = useCallback((suppressed: boolean) => {
+    panSuppressedRef.current = suppressed;
+  }, []);
 
   const coordinates = useMemo<CanvasCoordinates>(
-    () => ({ screenToCanvas, pointerPosition }),
-    [screenToCanvas, pointerPosition],
+    () => ({ screenToCanvas, pointerPosition, setPanSuppressed }),
+    [screenToCanvas, pointerPosition, setPanSuppressed],
   );
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     // Primary button/contact only (mouse left-click, single touch/pen point).
     if (event.button !== 0) return;
+    if (panSuppressedRef.current) return; // a `children` consumer owns this drag instead — see `setPanSuppressed`'s doc comment
     dragState.current = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY };
     event.currentTarget.setPointerCapture(event.pointerId);
   }

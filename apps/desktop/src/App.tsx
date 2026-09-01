@@ -6,6 +6,12 @@
 // `core.settings.plugins` still has nowhere to render into (no Settings UI
 // shell exists yet) — `AppShell`'s `PluginsStatusPanel` is the minimal
 // "Settings > Plugins" stand-in this story's acceptance criteria needs.
+//
+// NTA-38 also passes `commandBus` itself down to `AppShell` (not just the
+// `runCommand` wrapper below) — canvas-core/SegmentLayerHost.tsx needs
+// direct `register`/`unregister` access to install a real, page-aware
+// command handler over a plugin's activate()-time fallback; see that
+// file's and registry/createContext.ts's header comments.
 
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "./shell";
@@ -90,7 +96,7 @@ function App() {
     return <div className="app-shell app-shell--loading">Loading plugins…</div>;
   }
 
-  return <AppShell registeredPlugins={registeredPlugins} onRunCommand={runCommand} />;
+  return <AppShell registeredPlugins={registeredPlugins} onRunCommand={runCommand} commandBus={commandBus} />;
 }
 
 export default App;

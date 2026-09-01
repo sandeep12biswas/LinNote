@@ -21,22 +21,42 @@
 // if the shape changes — see CLAUDE.md's "Keep the data model in sync"
 // note.
 //
-// Two responsibilities:
+// Three responsibilities:
 // 1. Render every existing segment via @linnote/rich-text-engine's
 //    RichTextEngineProvider + EditorContent — border invisible by
 //    default (`visibility: "invisible"`), revealed on hover/focus via
-//    CSS (apps/desktop/src/App.css's `.segment-block` rules). NTA-38's
-//    "deliberate visible creation" reuses this same renderer via
-//    `visibility: "visible"` — no changes needed here for that.
-// 2. The create-on-type gesture: on the first printable keystroke with
-//    nothing else focused and no existing segment under the pointer's
-//    last-known canvas-space position, create a new (empty) segment
-//    there, focus it, and feed it that keystroke.
+//    CSS (apps/desktop/src/App.css's `.segment-block` rules); a
+//    `visibility: "visible"` segment (below) reuses the same renderer
+//    with its border always shown.
+// 2. The invisible create-on-type gesture (NTA-37): on the first
+//    printable keystroke with nothing else focused and no existing
+//    segment under the pointer's last-known canvas-space position,
+//    create a new (empty) segment there, focus it, and feed it that
+//    keystroke.
+// 3. The deliberate visible-creation gesture (NTA-38): a host-triggered
+//    "arm" (wired to a toolbar/menu command by
+//    apps/desktop/src/canvas-core/SegmentLayerHost.tsx, via
+//    `onCreateVisibleSegmentReady` below) puts this component into a
+//    one-shot "draw" state; the *next* primary-button click or drag
+//    anywhere creates a visible segment — a plain click at the default
+//    size, a drag sized/positioned to the dragged rectangle. Escape
+//    cancels an armed-but-not-yet-dragging gesture. Tracked via window
+//    `pointerdown`/`pointerup` listeners (mirroring the keydown
+//    listener's own window-scoped pattern) rather than a DOM hit-target
+//    of this component's own, since `.segment-layer` (nested inside
+//    CanvasViewport's scaled/panned transform layer) has no reliable
+//    full-viewport size to hang pointer capture off; `pointerPosition`
+//    (host-supplied, canvas-space, continuously updated while the
+//    pointer is over the canvas) is the only coordinate source needed.
+//    `setPanSuppressed` (also host-supplied) stops CanvasViewport's own
+//    pan-drag from starting underneath this gesture's drag.
 //
-// TODO(NTA-39/40): drag/reposition and real auto-grow-height/manual-
-// resize-width are separate subtasks of this same story (NTA-32) —
-// `width`/`height` below are placeholder defaults, not yet kept in sync
-// with rendered size, and nothing here lets a segment be dragged yet.
+// TODO(NTA-39/40): drag/reposition an *existing* segment and real
+// auto-grow-height/manual-resize-width are separate subtasks of this
+// same story (NTA-32) — `width`/`height` are otherwise-placeholder
+// defaults (or the drawn rectangle's own size for NTA-38), not kept in
+// sync with rendered content size, and nothing here lets an existing
+// segment be dragged yet.
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -45,6 +65,12 @@ import {
   useRichTextEditor,
   type RichTextDoc,
 } from "@linnote/rich-text-engine";
+
+/** The command id NTA-38's toolbar/menu "Add Segment" entry runs — shared between this plugin's own manifest/activate() and apps/desktop/src/canvas-core/SegmentLayerHost.tsx's real, page-aware registration of it. */
+export const CREATE_VISIBLE_SEGMENT_COMMAND = "core.element.text-segment.createVisible";
+
+/** Below this, in canvas-space units, a drag-to-draw gesture is treated as a plain click (default-sized create) rather than a deliberately-sized rectangle. */
+const DRAG_THRESHOLD = 4;
 
 /** A point in canvas-space — same coordinate space `SegmentBlockData.x`/`y` are stored in. */
 export interface CanvasPoint {
@@ -102,12 +128,23 @@ function isCreateOnTypeKey(event: KeyboardEvent): boolean {
 export interface SegmentLayerProps {
   /** Every `segment` element on the open page. */
   segments: SegmentBlockData[];
-  /** The pointer's last known canvas-space position (see canvas-core's `useCanvasCoordinates()`) — `null` when it isn't over the canvas. Drives the create-on-type gesture's placement. */
+  /** The pointer's last known canvas-space position (see canvas-core's `useCanvasCoordinates()`) — `null` when it isn't over the canvas. Drives both creation gestures' placement. */
   pointerPosition: CanvasPoint | null;
   /** Called to commit a brand-new segment (already carrying the just-typed first character, once its own editor mounts) onto the page. */
   onCreateSegment: (segment: SegmentBlockData) => void;
   /** Called whenever an existing segment's rich-text content changes. */
   onSegmentContentChange: (id: string, content: RichTextDoc) => void;
+  /**
+   * Called once with a stable `armCreateVisible` function the host can
+   * invoke (e.g. from a toolbar/menu command's handler,
+   * NTA-38's `CREATE_VISIBLE_SEGMENT_COMMAND`) to arm this component's
+   * deliberate visible-creation gesture — this component stays the one
+   * place that knows how to build/place/focus a segment; the host only
+   * needs a handle to ask for one.
+   */
+  onCreateVisibleSegmentReady?: (armCreateVisible: () => void) => void;
+  /** Suppresses CanvasViewport's own pan-drag while the drag-to-draw gesture owns a primary-button drag — see canvas-core's `useCanvasCoordinates()` doc comment. Omitted (e.g. in a test harness) just means drag-to-draw and panning can visually fight; the create-on-click/-drag logic itself doesn't depend on it. */
+  setPanSuppressed?: (suppressed: boolean) => void;
 }
 
 export function SegmentLayer({
@@ -115,22 +152,59 @@ export function SegmentLayer({
   pointerPosition,
   onCreateSegment,
   onSegmentContentChange,
+  onCreateVisibleSegmentReady,
+  setPanSuppressed,
 }: SegmentLayerProps) {
-  // Refs mirroring the latest props: the keydown listener below is
-  // attached once (empty deps) rather than re-attached on every
-  // pointermove, so it always sees the latest segments/pointer without
-  // thrashing the window listener on every mouse move.
+  // Refs mirroring the latest props/state: the window-level listeners
+  // below are attached with minimal deps rather than re-attached on
+  // every pointermove/render, so they always see the latest
+  // segments/pointer/callbacks without thrashing the listener.
   const segmentsRef = useRef(segments);
   segmentsRef.current = segments;
   const pointerPositionRef = useRef(pointerPosition);
   pointerPositionRef.current = pointerPosition;
   const onCreateSegmentRef = useRef(onCreateSegment);
   onCreateSegmentRef.current = onCreateSegment;
+  const setPanSuppressedRef = useRef(setPanSuppressed);
+  setPanSuppressedRef.current = setPanSuppressed;
 
-  const [pendingFocus, setPendingFocus] = useState<{ id: string; firstChar: string } | null>(null);
+  const [pendingFocus, setPendingFocus] = useState<{ id: string; firstChar?: string } | null>(null);
+  const [drawArmed, setDrawArmed] = useState(false);
+  const drawArmedRef = useRef(drawArmed);
+  drawArmedRef.current = drawArmed;
+  const dragStartRef = useRef<CanvasPoint | null>(null);
 
+  /** Builds, commits, and queues autofocus for a new segment at `point` — the one place both creation gestures below construct a `SegmentBlockData`. */
+  function createSegmentAt(
+    point: CanvasPoint,
+    options: { visibility: SegmentBlockData["visibility"]; firstChar?: string; width?: number; height?: number },
+  ) {
+    const currentSegments = segmentsRef.current;
+    const segment: SegmentBlockData = {
+      id: `segment-${crypto.randomUUID()}`,
+      type: "segment",
+      visibility: options.visibility,
+      x: point.x,
+      y: point.y,
+      width: options.width ?? DEFAULT_SEGMENT_WIDTH,
+      height: options.height ?? DEFAULT_SEGMENT_HEIGHT,
+      content: undefined,
+      zIndex: nextZIndex(currentSegments),
+    };
+    onCreateSegmentRef.current(segment);
+    setPendingFocus({ id: segment.id, firstChar: options.firstChar });
+  }
+
+  // Invisible create-on-type (NTA-37) + Escape/ignore handling while a
+  // visible-creation gesture is armed (NTA-38) — one window-level
+  // keydown listener, attached once.
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (drawArmedRef.current) {
+        if (event.key === "Escape") setDrawArmed(false);
+        return; // ignore all other keys while a create-visible gesture is armed, so it can't also trigger create-on-type
+      }
+
       if (!isCreateOnTypeKey(event)) return;
 
       const point = pointerPositionRef.current;
@@ -139,26 +213,76 @@ export function SegmentLayer({
       const currentSegments = segmentsRef.current;
       if (currentSegments.some((segment) => isPointInsideSegment(point, segment))) return; // NTA-37 is empty-space-only; an existing segment under the cursor is left alone
 
-      const segment: SegmentBlockData = {
-        id: `segment-${crypto.randomUUID()}`,
-        type: "segment",
-        visibility: "invisible",
-        x: point.x,
-        y: point.y,
-        width: DEFAULT_SEGMENT_WIDTH,
-        height: DEFAULT_SEGMENT_HEIGHT,
-        content: undefined,
-        zIndex: nextZIndex(currentSegments),
-      };
-
       event.preventDefault();
-      onCreateSegmentRef.current(segment);
-      setPendingFocus({ id: segment.id, firstChar: event.key });
+      createSegmentAt(point, { visibility: "invisible", firstChar: event.key });
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  // Exposes the "arm" trigger to the host once — see `onCreateVisibleSegmentReady`'s doc comment above.
+  useEffect(() => {
+    onCreateVisibleSegmentReady?.(() => setDrawArmed(true));
+  }, [onCreateVisibleSegmentReady]);
+
+  // Deliberate visible creation (NTA-38): while armed, the next
+  // pointerdown starts (or, for a plain click, immediately is) the
+  // gesture; pointerup finalizes it — click-sized if the drag never
+  // moved past DRAG_THRESHOLD, else sized/positioned to the dragged
+  // rectangle. Window-scoped rather than a DOM hit-target of this
+  // component's own — see this file's header comment for why.
+  //
+  // Pan is suppressed for the *entire* armed window (set as soon as this
+  // effect runs, released on cleanup), not just once a drag is
+  // detected: CanvasViewport's own pointerdown handler (a React
+  // synthetic listener on its root container) fires *before* this
+  // window-level one for the same physical event (the container sits
+  // below `window` on the bubble path) — suppressing only inside
+  // `handlePointerDown` below would always be one event too late to stop
+  // that first press from also starting a pan.
+  useEffect(() => {
+    if (!drawArmed) return;
+    setPanSuppressedRef.current?.(true);
+
+    function handlePointerDown(event: PointerEvent) {
+      if (event.button !== 0) return;
+      const point = pointerPositionRef.current;
+      if (!point) {
+        // Primary-button press somewhere off the canvas entirely (another
+        // pane, the menu bar, ...) — read as "changed their mind", not a
+        // draw start; let it do whatever it would normally do elsewhere.
+        setDrawArmed(false);
+        return;
+      }
+      dragStartRef.current = point;
+    }
+
+    function handlePointerUp() {
+      const start = dragStartRef.current;
+      dragStartRef.current = null;
+      setDrawArmed(false);
+      if (!start) return; // armed, but the pointerdown above bailed out (off-canvas) — nothing to finalize
+
+      const end = pointerPositionRef.current ?? start;
+      const width = Math.abs(end.x - start.x);
+      const height = Math.abs(end.y - start.y);
+      if (width < DRAG_THRESHOLD || height < DRAG_THRESHOLD) {
+        createSegmentAt(start, { visibility: "visible" }); // plain click (or a negligible drag): default size at the click point
+      } else {
+        const origin = { x: Math.min(start.x, end.x), y: Math.min(start.y, end.y) };
+        createSegmentAt(origin, { visibility: "visible", width, height });
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("pointerup", handlePointerUp);
+      setPanSuppressedRef.current?.(false);
+    };
+  }, [drawArmed]);
 
   return (
     <div className="segment-layer">
@@ -188,7 +312,18 @@ function SegmentBlockView({ segment, autoFocus, firstChar, onAutoFocusHandled, o
   return (
     <div
       className={`segment-block segment-block--${segment.visibility}`}
-      style={{ left: segment.x, top: segment.y, width: segment.width, zIndex: segment.zIndex }}
+      // `minHeight`, not `height`: content still grows the box taller
+      // (docs/architecture.md §7's "auto-grows downward") — this only
+      // keeps a deliberately drag-drawn rectangle (NTA-38) from visually
+      // shrinking below the size it was drawn at. Real measured-height
+      // persistence back onto `segment.height` is NTA-40's job.
+      style={{
+        left: segment.x,
+        top: segment.y,
+        width: segment.width,
+        minHeight: segment.height,
+        zIndex: segment.zIndex,
+      }}
       // Stops a click/drag-to-edit inside a segment from bubbling up to
       // CanvasViewport's own pointerdown handler, which would otherwise
       // start a viewport pan drag instead of placing a text caret.
