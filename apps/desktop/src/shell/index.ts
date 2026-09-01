@@ -40,10 +40,16 @@
 // folder's pages with subpages nested. Both read/write the in-memory
 // `WorkspaceNode` tree store in ../workspace/ (NTA-49).
 //
-// TODO(NTA-52/53/54/55): structural-operation undo stack, same-parent
-// fractional-index drag-reorder polish, a trash UI, and the breadcrumb
-// trail above the editor canvas are separate subtasks of the same parent
-// story (NTA-43) — not built here.
+// NTA-55 adds the breadcrumb trail above the editor canvas:
+// `buildBreadcrumb` (./breadcrumb.ts) + `BreadcrumbTrail`
+// (./BreadcrumbTrail.tsx) turn the open page's ancestor chain
+// (../workspace's `getAncestorChain`) into a clickable "notebook >
+// folder > ... > page" trail, mirroring the same pure-model /
+// React-component split.
+//
+// TODO(NTA-52/53/54): structural-operation undo stack, same-parent
+// fractional-index drag-reorder polish, and a trash UI are separate
+// subtasks of the same parent story (NTA-43) — not built here.
 
 import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { RegisteredPlugin } from "../registry";
@@ -201,3 +207,6 @@ export type { FolderTreeRow } from "./folderTree";
 export { PageListPane } from "./PageListPane";
 export { buildPageList } from "./pageList";
 export type { PageListRow } from "./pageList";
+export { BreadcrumbTrail } from "./BreadcrumbTrail";
+export { buildBreadcrumb } from "./breadcrumb";
+export type { BreadcrumbSegment } from "./breadcrumb";

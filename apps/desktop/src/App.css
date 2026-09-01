@@ -277,6 +277,52 @@ button {
   font-weight: 600;
 }
 
+/* ---- Breadcrumb trail above the editor canvas (NTA-55) ---- */
+
+.breadcrumb-trail {
+  margin: 0 0 0.5em;
+}
+
+.breadcrumb-trail__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breadcrumb-trail__item {
+  display: flex;
+  align-items: center;
+}
+
+.breadcrumb-trail__separator {
+  margin: 0 0.3em;
+  opacity: 0.5;
+}
+
+.breadcrumb-trail__segment {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0.25em;
+  padding: 0.15em 0.4em;
+  font: inherit;
+  font-size: 0.9em;
+  opacity: 0.75;
+}
+
+.breadcrumb-trail__segment:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  opacity: 1;
+}
+
+.breadcrumb-trail__segment--current {
+  font-weight: 600;
+  opacity: 1;
+}
+
 /* ---- Settings > Plugins minimal stand-in (NTA-15) ---- */
 
 .plugins-status-panel {
@@ -368,7 +414,8 @@ button {
   }
 
   .folder-tree__row:hover,
-  .page-list__item:hover {
+  .page-list__item:hover,
+  .breadcrumb-trail__segment:hover {
     background-color: rgba(255, 255, 255, 0.08);
   }
 
