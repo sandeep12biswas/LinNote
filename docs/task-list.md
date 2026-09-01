@@ -80,15 +80,10 @@ throwaway stub for the rest either — most of the remaining 11 already have
 a real-build ticket later in this list (Phase 5 §NTA-44 covers
 font-color/font-size/bullet-list/checkbox-list/alignment; Phase 7 §NTA-45
 covers file-attachment/youtube-embed; Phase 10 §NTA-48 covers both sync
-providers), so their real work will close these out the same way. **Gap
-found**: ink (NTA-25) and image (NTA-27) have no real-build ticket
-anywhere in this list — Phase 3's own description mentions "ink element
-type" but the NTA-32 story that got created for Phase 3 never actually
-included it (only viewport/header/background/segments); nothing beyond
-these two stubs and Phase 9's ink *performance* tickets (NTA-73/74,
-tiling — not the initial implementation) covers them. Needs a decision:
-either a new ticket for ink/image's real build, or fold them into an
-existing phase.
+providers), so their real work will close these out the same way. Ink
+(NTA-25) and image (NTA-27) had no real-build ticket anywhere in this
+list as of 2026-09-01 — see the new "Ink" and "Images" sections below,
+added that day to close the gap.
 
 - [ ] [NTA-16](https://sandeep12biswas.atlassian.net/browse/NTA-16) — Integration: activate all core.* plugins end-to-end 🟡
   - [x] [NTA-17](https://sandeep12biswas.atlassian.net/browse/NTA-17) core.format.bold
@@ -99,9 +94,9 @@ existing phase.
   - [ ] [NTA-22](https://sandeep12biswas.atlassian.net/browse/NTA-22) core.format.bullet-list
   - [ ] [NTA-23](https://sandeep12biswas.atlassian.net/browse/NTA-23) core.format.checkbox-list
   - [ ] [NTA-24](https://sandeep12biswas.atlassian.net/browse/NTA-24) core.format.alignment
-  - [ ] [NTA-25](https://sandeep12biswas.atlassian.net/browse/NTA-25) core.element.ink — ⚠️ no real-build ticket exists yet, see note above
+  - [ ] [NTA-25](https://sandeep12biswas.atlassian.net/browse/NTA-25) core.element.ink — real build tracked as NTA-90 below
   - [x] [NTA-26](https://sandeep12biswas.atlassian.net/browse/NTA-26) core.element.text-segment — real implementation via NTA-37-41, not a separate stub
-  - [ ] [NTA-27](https://sandeep12biswas.atlassian.net/browse/NTA-27) core.element.image — ⚠️ no real-build ticket exists yet, see note above
+  - [ ] [NTA-27](https://sandeep12biswas.atlassian.net/browse/NTA-27) core.element.image — real build tracked as NTA-94 below
   - [ ] [NTA-28](https://sandeep12biswas.atlassian.net/browse/NTA-28) core.element.file-attachment
   - [ ] [NTA-29](https://sandeep12biswas.atlassian.net/browse/NTA-29) core.element.youtube-embed
   - [ ] [NTA-30](https://sandeep12biswas.atlassian.net/browse/NTA-30) core.sync.onedrive
@@ -141,6 +136,22 @@ block-and-snap (Phase 6), all one story since each builds on the last.
   - [x] [NTA-41](https://sandeep12biswas.atlassian.net/browse/NTA-41) Segment block: non-overlap (block-and-snap) — *Phase 6*
   - [x] [NTA-42](https://sandeep12biswas.atlassian.net/browse/NTA-42) Wire real bold/italic/header formatting commands into segments
 
+## Cross-cutting — Ink drawing (core.element.ink) ⚪ NOT STARTED
+
+Freehand drawing — pointer capture, `perfect-freehand` outline, eraser
+modes. Named in Phase 3's own description ("viewport transform, ink
+element type, page header/background") but never actually included in
+NTA-32, the story created for Phase 3 — this closes that gap. Not
+sequenced relative to the numbered phases; core-canvas-content-shaped
+like segments, so it can be picked up independent of Phase 5/7 progress.
+Full undo/redo integration deferred to Phase 8 (NTA-46), same as
+segment drag/resize were.
+
+- [ ] [NTA-90](https://sandeep12biswas.atlassian.net/browse/NTA-90) — core.element.ink: freehand pointer-capture drawing (perfect-freehand + eraser)
+  - [ ] [NTA-91](https://sandeep12biswas.atlassian.net/browse/NTA-91) Stroke capture & rendering: pointer capture, perfect-freehand outline, Path2D paint
+  - [ ] [NTA-92](https://sandeep12biswas.atlassian.net/browse/NTA-92) Tool selection: pen/highlighter/eraser modes, color & size, toolbar-armed draw gesture
+  - [ ] [NTA-93](https://sandeep12biswas.atlassian.net/browse/NTA-93) Eraser: whole-stroke and pixel/segment erase modes
+
 ## Phase 5 — Remaining formatting plugins (build) ⚪ NOT STARTED
 
 Font-color, font-size, bullet-list, checkbox-list, alignment — real logic,
@@ -163,6 +174,26 @@ external playback) behavior, beyond the stub activation above.
   - [ ] [NTA-63](https://sandeep12biswas.atlassian.net/browse/NTA-63) core.element.youtube-embed: data model + inline sandboxed player
   - [ ] [NTA-64](https://sandeep12biswas.atlassian.net/browse/NTA-64) YouTube insert-time prompt: "Play here" vs "Open in browser"
   - [ ] [NTA-65](https://sandeep12biswas.atlassian.net/browse/NTA-65) fileHandlers extension point plumbing
+
+## Cross-cutting — Images (core.element.image) ⚪ NOT STARTED
+
+Insert via file picker, drag-and-drop, or paste; copy the source file
+into workspace assets; resize via segment-style drag handles. Unlike
+every other element/format plugin, image had *no* design in
+`docs/architecture.md` at all before 2026-09-01 (only named in the
+plugin roster and the `ImageElement` data shape) — this closes that
+gap; the insertion methods/storage model/resize behavior were decided
+with the user in-session rather than inherited from an existing design.
+Not sequenced relative to the numbered phases; similar in spirit to
+Phase 7's attachments/embeds (inserting rich content onto the canvas),
+so a reasonable place to pick it up alongside or after that phase.
+
+- [ ] [NTA-94](https://sandeep12biswas.atlassian.net/browse/NTA-94) — core.element.image: insert (file picker, drag-drop, paste), workspace-copied assets, resizable
+  - [ ] [NTA-95](https://sandeep12biswas.atlassian.net/browse/NTA-95) ImageElement rendering + in-memory workspace-asset storage (foundation)
+  - [ ] [NTA-96](https://sandeep12biswas.atlassian.net/browse/NTA-96) Insert via file picker
+  - [ ] [NTA-97](https://sandeep12biswas.atlassian.net/browse/NTA-97) Insert via drag-and-drop onto the canvas
+  - [ ] [NTA-98](https://sandeep12biswas.atlassian.net/browse/NTA-98) Insert via paste from clipboard
+  - [ ] [NTA-99](https://sandeep12biswas.atlassian.net/browse/NTA-99) Resize via drag handles (segment-style)
 
 ## Phase 8 — Undo/redo, model & persistence ⚪ NOT STARTED
 

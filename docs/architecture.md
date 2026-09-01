@@ -250,7 +250,21 @@ concerns with no dependency between them.
   `perfect-freehand` tapered outline → `Path2D` paint on a per-tile
   `<canvas>`. Eraser is whole-stroke or pixel/segment, both undoable.
   `touch-action: none` is required so WebView2/WKWebView doesn't steal
-  pen/touch input.
+  pen/touch input. Real build tracked as NTA-90 (added 2026-09-01 — this
+  design predates that ticket but was never itself scheduled into a
+  phase; see NTA-90 for the gap this closed).
+- **Images** (`plugins/element-image`, `core.element.image`): inserted
+  via file picker, drag-and-drop onto the canvas, or paste from
+  clipboard — the source file is copied into the page's workspace assets
+  (`assets/<id>/...`, §6), so `ImageElement.assetPath` stays valid even
+  if the original moves or is deleted. Resizes via the same drag-handle
+  model segments use (§4), aspect-ratio-locked by default, corner
+  handles rather than left/right-only since there's no text reflow to
+  constrain it to one axis. Added to this doc 2026-09-01 — previously
+  named only in the plugin roster (§1.4) and `ImageElement`'s own shape
+  (`apps/desktop/src/types/index.ts`; this doc never described it at
+  all, unlike every other element type here); real build tracked as
+  NTA-94.
 - **File attachments** (`plugins/element-file-attachment`,
   `core.element.file-attachment`): docx/xlsx/txt/md/etc.; double-click
   opens in the OS-default app via `@tauri-apps/plugin-shell`.
