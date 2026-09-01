@@ -9,6 +9,7 @@ import {
   MIN_SCALE,
   panViewport,
   updateElementInPage,
+  updateHeaderInPage,
   useNotePageStore,
   zoomViewport,
   type Viewport,
@@ -166,6 +167,18 @@ describe("updateElementInPage", () => {
   });
 });
 
+describe("updateHeaderInPage", () => {
+  it("replaces the header via updater and bumps updatedAt, without mutating the input page", () => {
+    const page = createBlankNotePage("page-1");
+
+    const result = updateHeaderInPage(page, (header) => ({ ...header, title: "New Title", align: "center" }));
+
+    expect(result.header).toEqual({ title: "New Title", align: "center" });
+    expect(page.header).toEqual({ title: "Untitled Page", align: "left" }); // input untouched
+    expect(result.updatedAt >= page.updatedAt).toBe(true);
+  });
+});
+
 describe("useNotePageStore", () => {
   beforeEach(() => {
     useNotePageStore.setState({ pages: createSeedNotePages() });
@@ -232,5 +245,17 @@ describe("useNotePageStore", () => {
     useNotePageStore.getState().updateElement("page-never-opened", "some-id", (element) => element);
 
     expect(useNotePageStore.getState().pages).toBe(before);
+  });
+
+  it("updateHeader replaces the header on an already-open page", () => {
+    useNotePageStore.getState().updateHeader("page-groceries", (header) => ({ ...header, title: "Shopping List" }));
+
+    expect(useNotePageStore.getState().pages["page-groceries"].header.title).toBe("Shopping List");
+  });
+
+  it("updateHeader get-or-creates a page that hasn't been opened yet, rather than throwing", () => {
+    useNotePageStore.getState().updateHeader("page-never-opened", (header) => ({ ...header, align: "right" }));
+
+    expect(useNotePageStore.getState().pages["page-never-opened"].header.align).toBe("right");
   });
 });

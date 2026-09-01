@@ -161,6 +161,17 @@ export function updateElementInPage(
   };
 }
 
+/**
+ * Pure: returns a new `NotePage` with `header` replaced by
+ * `updater(header)` and `updatedAt` bumped — `updateHeader` below's
+ * zustand wrapper. `header` always exists (unlike an element, which may
+ * or may not be present), so there's no "does it exist" branch here the
+ * way `updateElementInPage` has.
+ */
+export function updateHeaderInPage(page: NotePage, updater: (header: NotePage["header"]) => NotePage["header"]): NotePage {
+  return { ...page, header: updater(page.header), updatedAt: new Date().toISOString() };
+}
+
 interface NotePageState {
   pages: Record<string, NotePage>;
   /**
@@ -186,6 +197,14 @@ interface NotePageState {
    * page hasn't been opened/created yet or has no element with that id.
    */
   updateElement: (id: string, elementId: string, updater: (element: CanvasElement) => CanvasElement) => void;
+  /**
+   * Replaces `id`'s page `header` via `updater` — NTA-34's `PageHeader`
+   * (./PageHeader.tsx) calls this on every title keystroke, date
+   * toggle, and alignment change. Get-or-creates the page first (same
+   * as `addElement`) so editing a page's header before anything else
+   * has touched it doesn't throw.
+   */
+  updateHeader: (id: string, updater: (header: NotePage["header"]) => NotePage["header"]) => void;
 }
 
 /**
@@ -213,9 +232,14 @@ export const useNotePageStore = create<NotePageState>((set, get) => ({
     if (!page) return;
     set({ pages: { ...get().pages, [id]: updateElementInPage(page, elementId, updater) } });
   },
+  updateHeader: (id, updater) => {
+    const { pages: withPage, page } = getOrCreatePage(get().pages, id);
+    set({ pages: { ...withPage, [id]: updateHeaderInPage(page, updater) } });
+  },
 }));
 
 export { createSeedNotePages } from "./mockData";
 export { CanvasViewport, useCanvasCoordinates } from "./CanvasViewport";
 export type { CanvasCoordinates, CanvasPoint, CanvasViewportProps } from "./CanvasViewport";
 export { SegmentLayerHost } from "./SegmentLayerHost";
+export { PageHeader } from "./PageHeader";
