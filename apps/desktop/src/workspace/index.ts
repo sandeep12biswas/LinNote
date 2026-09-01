@@ -25,10 +25,11 @@
 // TODO(NTA-53): `moveNode`'s ordering only supports "append to the end"
 // or a caller-supplied `beforeSiblingId` — full fractional-index
 // same-parent drag-reorder polish is that subtask, not this one.
-// TODO(NTA-54): `deleteNode` below does cascade a soft delete
-// (`trashedAt`) to every descendant, per §3's "Structural operations"
-// note, but a trash UI (browse/restore/permanently-delete) is that
-// subtask.
+// NTA-54: `deleteNode` below cascades the soft delete (`trashedAt`) to
+// every descendant, per §3's "Structural operations" note. This file
+// also adds the rest of §5.5's trash model — `getTrashedNodes`,
+// `restoreNode`, `purgeNode`, `emptyTrash`, `purgeExpiredTrash` — that
+// ../shell/TrashPane.tsx (browse/restore/permanently-delete) consumes.
 
 import { generateKeyBetween } from "fractional-indexing";
 import { create } from "zustand";
@@ -183,6 +184,104 @@ function updateNode(nodes: WorkspaceNode[], id: string, patch: Partial<Workspace
   return next;
 }
 
+// ---- §5.5: Trash (NTA-54) -----------------------------------------------
+//
+// `deleteNode` above only ever soft-deletes: it stamps `trashedAt` on a
+// node and every descendant, hiding them from `getChildren`/
+// `getRootNodes` but never destroying data. The functions below are the
+// rest of the trash lifecycle a Trash UI needs: browse what's there,
+// restore it, or permanently remove it (one item, everything, or
+// whatever has aged past the retention window).
+
+/** How long a soft-deleted node sits in the trash before `purgeExpiredTrash` reclaims it, per §5.5's
+ * "permanently removes content after a retention window" — not specified more precisely anywhere in
+ * docs/architecture.md, so 30 days (a common OneNote/Drive-style default) is this ticket's call. */
+export const TRASH_RETENTION_DAYS = 30;
+
+/** True when `node`'s parent is itself trashed — i.e. `node` was pulled into the trash only because an
+ * ancestor's `deleteNode` cascaded onto it, not because it's independently the thing the user asked to
+ * delete. */
+function hasTrashedParent(nodes: WorkspaceNode[], node: WorkspaceNode): boolean {
+  if (node.parentId == null) return false;
+  const parent = getNode(nodes, node.parentId);
+  return parent != null && isTrashed(parent);
+}
+
+/**
+ * The trashed nodes a Trash UI actually lists: only "trash roots" —
+ * trashed nodes whose parent isn't itself trashed — most recently
+ * deleted first. A cascade-trashed folder/notebook's own descendants
+ * aren't listed as separate rows: `restoreNode`/`purgeNode` bring (or
+ * take) the whole subtree along with its root, and listing a descendant
+ * on its own would let it be "restored" while its still-trashed parent
+ * stays invisible.
+ */
+export function getTrashedNodes(nodes: WorkspaceNode[]): WorkspaceNode[] {
+  return nodes
+    .filter((n) => isTrashed(n) && !hasTrashedParent(nodes, n))
+    .sort((a, b) => (b.trashedAt as string).localeCompare(a.trashedAt as string));
+}
+
+/**
+ * Restores `id` and cascades the restore to every descendant — the
+ * inverse of `deleteNode`'s cascade, so a whole cascade-trashed subtree
+ * comes back together. A no-op when `id` isn't currently trashed (rather
+ * than blindly cascading `trashedAt: null` onto descendants that may be
+ * independently, still-legitimately trashed).
+ */
+export function restoreNode(nodes: WorkspaceNode[], id: string): WorkspaceNode[] {
+  const target = getNode(nodes, id);
+  if (!target || !isTrashed(target)) return nodes;
+  const toRestore = new Set([id, ...getDescendantIds(nodes, id)]);
+  const now = new Date().toISOString();
+  return nodes.map((n) => (toRestore.has(n.id) ? { ...n, trashedAt: null, updatedAt: now } : n));
+}
+
+/**
+ * Permanently removes `id` and every descendant from the tree — real
+ * data loss, unlike `deleteNode`. Refuses on a node that isn't currently
+ * trashed, so this can only be reached by first soft-deleting (via the
+ * Trash UI's "Delete Permanently", never as a bypass for the ordinary
+ * delete flow).
+ */
+export function purgeNode(nodes: WorkspaceNode[], id: string): WorkspaceNode[] {
+  const target = getNode(nodes, id);
+  if (!target) throw new Error(`purgeNode: unknown node id "${id}"`);
+  if (!isTrashed(target)) throw new Error(`purgeNode: "${id}" is not in the trash — soft-delete it first`);
+  const toPurge = new Set([id, ...getDescendantIds(nodes, id)]);
+  return nodes.filter((n) => !toPurge.has(n.id));
+}
+
+/** Permanently removes every currently-trashed node (roots and cascaded descendants alike) — "Empty Trash". */
+export function emptyTrash(nodes: WorkspaceNode[]): WorkspaceNode[] {
+  return nodes.filter((n) => !isTrashed(n));
+}
+
+/**
+ * The "background sweep" from §5.5: permanently removes every trash root
+ * older than `retentionDays` (default `TRASH_RETENTION_DAYS`), each
+ * along with its cascaded descendants (via `purgeNode`). There's no
+ * real scheduler yet — `useWorkspaceTreeStore` runs this once at store
+ * creation and `../shell/TrashPane.tsx` runs it again on mount, standing
+ * in for a periodic job until persistence (Phase 8, NTA-69) makes
+ * `trashedAt` survive across sessions and a background sweep meaningful.
+ */
+export function purgeExpiredTrash(
+  nodes: WorkspaceNode[],
+  options: { retentionDays?: number; now?: Date } = {},
+): WorkspaceNode[] {
+  const retentionMs = (options.retentionDays ?? TRASH_RETENTION_DAYS) * 24 * 60 * 60 * 1000;
+  const cutoff = (options.now ?? new Date()).getTime() - retentionMs;
+
+  let result = nodes;
+  for (const root of getTrashedNodes(nodes)) {
+    if (new Date(root.trashedAt as string).getTime() <= cutoff && getNode(result, root.id)) {
+      result = purgeNode(result, root.id);
+    }
+  }
+  return result;
+}
+
 // ---- Zustand wrapper ---------------------------------------------------
 
 interface WorkspaceTreeState {
@@ -191,15 +290,22 @@ interface WorkspaceTreeState {
   renameNode: (id: string, title: string) => void;
   moveNode: (id: string, newParentId: string | null, options?: MoveNodeOptions) => void;
   deleteNode: (id: string) => void;
+  restoreNode: (id: string) => void;
+  purgeNode: (id: string) => void;
+  emptyTrash: () => void;
+  sweepExpiredTrash: (options?: { retentionDays?: number; now?: Date }) => void;
 }
 
 /**
- * The store the Folder Tree / Page List panes actually read from and
- * mutate through. Wraps the pure functions above around a single
- * `nodes` array, seeded from ./mockData.ts on first use.
+ * The store the Folder Tree / Page List / Trash panes actually read from
+ * and mutate through. Wraps the pure functions above around a single
+ * `nodes` array, seeded from ./mockData.ts on first use — `purgeExpiredTrash`
+ * runs once up front too (a no-op today since the seed has nothing
+ * trashed, but the right thing once persisted `trashedAt` values can
+ * come in already past the retention window).
  */
 export const useWorkspaceTreeStore = create<WorkspaceTreeState>((set, get) => ({
-  nodes: createSeedWorkspaceNodes(),
+  nodes: purgeExpiredTrash(createSeedWorkspaceNodes()),
   createNode: (input) => {
     const result = createNode(get().nodes, input);
     set({ nodes: result.nodes });
@@ -208,6 +314,10 @@ export const useWorkspaceTreeStore = create<WorkspaceTreeState>((set, get) => ({
   renameNode: (id, title) => set({ nodes: renameNode(get().nodes, id, title) }),
   moveNode: (id, newParentId, options) => set({ nodes: moveNode(get().nodes, id, newParentId, options) }),
   deleteNode: (id) => set({ nodes: deleteNode(get().nodes, id) }),
+  restoreNode: (id) => set({ nodes: restoreNode(get().nodes, id) }),
+  purgeNode: (id) => set({ nodes: purgeNode(get().nodes, id) }),
+  emptyTrash: () => set({ nodes: emptyTrash(get().nodes) }),
+  sweepExpiredTrash: (options) => set({ nodes: purgeExpiredTrash(get().nodes, options) }),
 }));
 
 export { createSeedWorkspaceNodes } from "./mockData";
