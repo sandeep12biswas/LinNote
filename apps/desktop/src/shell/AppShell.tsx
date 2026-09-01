@@ -42,9 +42,13 @@
 // as `CanvasViewport`'s `children` — the segment-block renderer and
 // invisible create-on-type gesture, panning/scaling with the page's
 // other content.
+//
+// NTA-34 mounts `PageHeader` (../canvas-core/PageHeader.tsx) as
+// `CanvasViewport`'s `header` prop — title/date/alignment, fixed on
+// screen outside the pan/zoom transform.
 
 import { useState } from "react";
-import { CanvasViewport, SegmentLayerHost } from "../canvas-core";
+import { CanvasViewport, PageHeader, SegmentLayerHost } from "../canvas-core";
 import { useNavigationStore } from "../store";
 import { buildMenuBar, buildToolbar } from "./index";
 import { MenuBar } from "./MenuBar";
@@ -90,7 +94,7 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
         <section className="app-shell__pane app-shell__pane--editor-canvas" aria-label="Editor Canvas">
           <BreadcrumbTrail />
           {activePageId ? (
-            <CanvasViewport pageId={activePageId}>
+            <CanvasViewport pageId={activePageId} header={<PageHeader pageId={activePageId} />}>
               <SegmentLayerHost pageId={activePageId} />
             </CanvasViewport>
           ) : (
