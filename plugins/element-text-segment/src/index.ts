@@ -21,7 +21,9 @@ import { CREATE_VISIBLE_SEGMENT_COMMAND } from "./SegmentLayer";
 // either side can register against (registry/createContext.ts's own
 // header comment already documents it that way).
 //
-// TODO(NTA-39/40/41): drag/reposition, auto-grow/resize, non-overlap.
+// NTA-39 adds drag/reposition; NTA-40 adds measured auto-grow height +
+// manual-resize width with reflow (also ./SegmentLayer.tsx).
+// TODO(NTA-41): non-overlap (block-and-snap).
 export const plugin: Plugin = {
   manifest: {
     id: "core.element.text-segment",
@@ -49,6 +51,7 @@ export {
   CREATE_VISIBLE_SEGMENT_COMMAND,
   DEFAULT_SEGMENT_HEIGHT,
   DEFAULT_SEGMENT_WIDTH,
+  MIN_SEGMENT_WIDTH,
   isPointInsideSegment,
   nextZIndex,
   SegmentLayer,

@@ -23,6 +23,9 @@
 // drag/reposition gesture needs it directly; see `SegmentLayer`'s own
 // header comment for why `pointerPosition` alone isn't enough for that
 // one gesture.
+//
+// NTA-40 adds `handleHeightChange`/`handleResizeSegment` — same
+// updateElement-based pattern as the move/content-change handlers above.
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { CREATE_VISIBLE_SEGMENT_COMMAND, SegmentLayer, type SegmentBlockData } from "@linnote/plugin-element-text-segment";
@@ -85,6 +88,20 @@ export function SegmentLayerHost({ pageId, commandBus }: SegmentLayerHostProps) 
     [pageId, updateElement],
   );
 
+  const handleHeightChange = useCallback(
+    (id: string, height: number) => {
+      updateElement(pageId, id, (element) => ({ ...element, height }) as CanvasElement);
+    },
+    [pageId, updateElement],
+  );
+
+  const handleResizeSegment = useCallback(
+    (id: string, x: number, width: number) => {
+      updateElement(pageId, id, (element) => ({ ...element, x, width }) as CanvasElement);
+    },
+    [pageId, updateElement],
+  );
+
   // `SegmentLayer` hands us its own "arm the visible-creation gesture"
   // trigger once (see its `onCreateVisibleSegmentReady` doc comment);
   // stashed in a ref so the CommandBus registration effect below doesn't
@@ -108,6 +125,8 @@ export function SegmentLayerHost({ pageId, commandBus }: SegmentLayerHostProps) 
       onCreateSegment={handleCreateSegment}
       onSegmentContentChange={handleSegmentContentChange}
       onMoveSegment={handleMoveSegment}
+      onHeightChange={handleHeightChange}
+      onResizeSegment={handleResizeSegment}
       screenToCanvas={screenToCanvas}
       onCreateVisibleSegmentReady={handleCreateVisibleSegmentReady}
       setPanSuppressed={setPanSuppressed}

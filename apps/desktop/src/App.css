@@ -400,6 +400,26 @@ button {
   cursor: text;
 }
 
+/* Manual-resize width handles (NTA-40) — thin invisible strips anchored
+   to `.segment-block`'s own `position: absolute` (their nearest
+   positioned ancestor), one on each edge. `min-width: 40px` above must
+   match `MIN_SEGMENT_WIDTH` in SegmentLayer.tsx. */
+.segment-block__resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.segment-block__resize-handle--left {
+  left: -3px;
+}
+
+.segment-block__resize-handle--right {
+  right: -3px;
+}
+
 .app-shell--loading {
   display: flex;
   align-items: center;
