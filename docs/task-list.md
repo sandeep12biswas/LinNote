@@ -158,7 +158,7 @@ Font-color, font-size, bullet-list, checkbox-list, alignment — real logic,
 beyond the stub activation above. Same pattern as NTA-42.
 
 - [ ] [NTA-44](https://sandeep12biswas.atlassian.net/browse/NTA-44) — Phase 5: Remaining formatting plugins (build)
-  - [ ] [NTA-57](https://sandeep12biswas.atlassian.net/browse/NTA-57) core.format.font-color: text color mark + core.util.contrast default suggestion
+  - [x] [NTA-57](https://sandeep12biswas.atlassian.net/browse/NTA-57) core.format.font-color: text color mark + core.util.contrast default suggestion
   - [ ] [NTA-58](https://sandeep12biswas.atlassian.net/browse/NTA-58) core.format.font-size: text size mark
   - [ ] [NTA-59](https://sandeep12biswas.atlassian.net/browse/NTA-59) core.format.bullet-list: bulleted list node
   - [ ] [NTA-60](https://sandeep12biswas.atlassian.net/browse/NTA-60) core.format.checkbox-list: checkable to-do list node
