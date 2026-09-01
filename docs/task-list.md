@@ -120,7 +120,7 @@ block-and-snap (Phase 6), all one story since each builds on the last.
   - [x] [NTA-35](https://sandeep12biswas.atlassian.net/browse/NTA-35) Page background color + auto-contrast font suggestion
   - [x] [NTA-36](https://sandeep12biswas.atlassian.net/browse/NTA-36) Rich text engine: mount TipTap inside a canvas segment
   - [x] [NTA-37](https://sandeep12biswas.atlassian.net/browse/NTA-37) Segment block: invisible create-on-type
-  - [ ] [NTA-38](https://sandeep12biswas.atlassian.net/browse/NTA-38) Segment block: deliberate visible creation
+  - [x] [NTA-38](https://sandeep12biswas.atlassian.net/browse/NTA-38) Segment block: deliberate visible creation
   - [ ] [NTA-39](https://sandeep12biswas.atlassian.net/browse/NTA-39) Segment block: drag/reposition with formatting preserved
   - [ ] [NTA-40](https://sandeep12biswas.atlassian.net/browse/NTA-40) Segment block: auto-grow height & manual-resize width with reflow
   - [ ] [NTA-41](https://sandeep12biswas.atlassian.net/browse/NTA-41) Segment block: non-overlap (block-and-snap) — *Phase 6*
