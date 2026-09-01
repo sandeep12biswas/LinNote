@@ -108,18 +108,18 @@ later phase from testing against a real notebook instead of a hardcoded page.
   - [x] [NTA-55](https://sandeep12biswas.atlassian.net/browse/NTA-55) Breadcrumb trail above the editor canvas
   - [x] [NTA-56](https://sandeep12biswas.atlassian.net/browse/NTA-56) Lazy loading + virtualized panes + incremental title/text search index
 
-## Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text ⚪ NOT STARTED
+## Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text 🟡
 
 Viewport transform, ink element type, page header/background (Phase 3) →
 TipTap + segment blocks + first real formatting (Phase 4) → non-overlap
 block-and-snap (Phase 6), all one story since each builds on the last.
 
-- [ ] [NTA-32](https://sandeep12biswas.atlassian.net/browse/NTA-32) — Core note editor: canvas, segment blocks & rich text
-  - [ ] [NTA-33](https://sandeep12biswas.atlassian.net/browse/NTA-33) Canvas viewport: pan/zoom transform & render surface
-  - [ ] [NTA-34](https://sandeep12biswas.atlassian.net/browse/NTA-34) Page header: title, optional date & alignment
+- [ ] [NTA-32](https://sandeep12biswas.atlassian.net/browse/NTA-32) — Core note editor: canvas, segment blocks & rich text 🟡
+  - [x] [NTA-33](https://sandeep12biswas.atlassian.net/browse/NTA-33) Canvas viewport: pan/zoom transform & render surface
+  - [x] [NTA-34](https://sandeep12biswas.atlassian.net/browse/NTA-34) Page header: title, optional date & alignment
   - [ ] [NTA-35](https://sandeep12biswas.atlassian.net/browse/NTA-35) Page background color + auto-contrast font suggestion
-  - [ ] [NTA-36](https://sandeep12biswas.atlassian.net/browse/NTA-36) Rich text engine: mount TipTap inside a canvas segment
-  - [ ] [NTA-37](https://sandeep12biswas.atlassian.net/browse/NTA-37) Segment block: invisible create-on-type
+  - [x] [NTA-36](https://sandeep12biswas.atlassian.net/browse/NTA-36) Rich text engine: mount TipTap inside a canvas segment
+  - [x] [NTA-37](https://sandeep12biswas.atlassian.net/browse/NTA-37) Segment block: invisible create-on-type
   - [ ] [NTA-38](https://sandeep12biswas.atlassian.net/browse/NTA-38) Segment block: deliberate visible creation
   - [ ] [NTA-39](https://sandeep12biswas.atlassian.net/browse/NTA-39) Segment block: drag/reposition with formatting preserved
   - [ ] [NTA-40](https://sandeep12biswas.atlassian.net/browse/NTA-40) Segment block: auto-grow height & manual-resize width with reflow
