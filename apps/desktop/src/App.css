@@ -139,6 +139,205 @@ button {
   flex: 1 1 auto;
 }
 
+.app-shell--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1em;
+  opacity: 0.7;
+}
+
+/* ---- Folder Tree pane (NTA-50) ---- */
+
+.folder-tree__empty,
+.page-list__empty {
+  margin: 0.5em 0 0;
+  font-size: 0.9em;
+  opacity: 0.6;
+}
+
+.folder-tree__row {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0.2em 0.3em;
+  border-radius: 0.25em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.folder-tree__row:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.folder-tree__row--selected {
+  background-color: rgba(37, 99, 235, 0.14);
+}
+
+.folder-tree__row--drop-target {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+}
+
+.folder-tree__disclosure {
+  flex: 0 0 auto;
+  width: 1.2em;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  font-size: 0.75em;
+  opacity: 0.7;
+}
+
+.folder-tree__disclosure:disabled {
+  cursor: default;
+  visibility: hidden;
+}
+
+.folder-tree__label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-tree__rename-input {
+  flex: 1 1 auto;
+  font: inherit;
+  padding: 0.1em 0.3em;
+  border: 1px solid #2563eb;
+  border-radius: 0.2em;
+}
+
+.folder-tree__context-menu {
+  position: fixed;
+  z-index: 20;
+  margin: 0;
+  padding: 0.25em 0;
+  list-style: none;
+  min-width: 9em;
+  background-color: #ffffff;
+  border: 1px solid #d9d9d9;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 0.25em;
+}
+
+.folder-tree__context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 0.35em 1em;
+  box-shadow: none;
+  border-radius: 0;
+  font-size: 0.9em;
+}
+
+.folder-tree__context-menu button:hover {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.folder-tree__context-menu-empty {
+  padding: 0.35em 1em;
+  font-size: 0.85em;
+  opacity: 0.6;
+}
+
+/* ---- Page List pane (NTA-51) ---- */
+
+.page-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.page-list__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0.25em;
+  padding: 0.25em 0.4em;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-list__item:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.page-list__item--active {
+  background-color: rgba(37, 99, 235, 0.14);
+  font-weight: 600;
+}
+
+/* ---- Settings > Plugins minimal stand-in (NTA-15) ---- */
+
+.plugins-status-panel {
+  flex: 0 0 auto;
+  max-height: 8em;
+  overflow: auto;
+  padding: 0.5em 0.75em;
+  border-top: 1px solid #d9d9d9;
+  background-color: #fafafa;
+  font-size: 0.85em;
+}
+
+.plugins-status-panel__title {
+  margin: 0 0 0.35em;
+  font-size: 1em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+
+.plugins-status-panel__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugins-status-panel__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+  padding: 0.15em 0.5em;
+  border-radius: 0.25em;
+  background-color: #ffffff;
+  border: 1px solid #d9d9d9;
+}
+
+.plugins-status-panel__id {
+  opacity: 0.55;
+  font-size: 0.9em;
+}
+
+.plugins-status-panel__state {
+  font-weight: 600;
+}
+
+.plugins-status-panel__item--active .plugins-status-panel__state {
+  color: #1a7f37;
+}
+
+.plugins-status-panel__item--disabled .plugins-status-panel__state {
+  opacity: 0.6;
+}
+
+.plugins-status-panel__item--failed .plugins-status-panel__state {
+  color: #cf222e;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
@@ -147,17 +346,43 @@ button {
 
   .menu-bar,
   .app-shell__pane--folder-tree,
-  .app-shell__pane--page-list {
+  .app-shell__pane--page-list,
+  .plugins-status-panel {
     border-color: #4a4a4a;
   }
 
   .menu-bar,
-  .toolbar {
+  .toolbar,
+  .plugins-status-panel {
     background-color: #1f1f1f;
+  }
+
+  .plugins-status-panel__item {
+    background-color: #2a2a2a;
+    border-color: #4a4a4a;
   }
 
   .menu-bar__dropdown {
     background-color: #1f1f1f;
     border-color: #4a4a4a;
+  }
+
+  .folder-tree__row:hover,
+  .page-list__item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .folder-tree__row--selected,
+  .page-list__item--active {
+    background-color: rgba(96, 148, 255, 0.22);
+  }
+
+  .folder-tree__context-menu {
+    background-color: #1f1f1f;
+    border-color: #4a4a4a;
+  }
+
+  .folder-tree__context-menu button:hover {
+    background-color: rgba(255, 255, 255, 0.08);
   }
 }
