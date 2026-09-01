@@ -4,11 +4,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { simulateResize } from "../vitest.setup";
 import {
   isPointInsideSegment,
+  maxWidthBeforeCollision,
   MIN_SEGMENT_WIDTH,
   nextZIndex,
+  resolveNonOverlap,
+  SEGMENT_GAP,
   SegmentLayer,
   type CanvasPoint,
   type SegmentBlockData,
+  type SegmentRect,
 } from "./SegmentLayer";
 
 let container: HTMLDivElement | null = null;
@@ -216,6 +220,82 @@ describe("nextZIndex", () => {
   it("is one more than the highest existing zIndex", () => {
     const segments = [makeSegment({ zIndex: 2 }), makeSegment({ zIndex: 5 }), makeSegment({ zIndex: 1 })];
     expect(nextZIndex(segments)).toBe(6);
+  });
+});
+
+describe("resolveNonOverlap (NTA-41)", () => {
+  it("returns the candidate unchanged when it doesn't overlap anything, even within the gap", () => {
+    const neighbor: SegmentRect = { x: 100, y: 0, width: 50, height: 50 };
+    const candidate: SegmentRect = { x: 0, y: 0, width: 50, height: 50 }; // right edge at 50, gap to neighbor's left edge (100) is 50 > SEGMENT_GAP
+    expect(resolveNonOverlap(candidate, [neighbor])).toEqual(candidate);
+  });
+
+  it("pushes out horizontally when the horizontal correction is smaller than the vertical one", () => {
+    // Candidate and neighbor fully overlap vertically (same y/height), and the horizontal
+    // overlap is shallow — the minimal correction is clearly horizontal.
+    const neighbor: SegmentRect = { x: 40, y: 0, width: 50, height: 50 };
+    const candidate: SegmentRect = { x: 0, y: 0, width: 50, height: 50 }; // right edge at 50, 10px into neighbor's left edge
+    const resolved = resolveNonOverlap(candidate, [neighbor]);
+    expect(resolved.y).toBe(0); // untouched
+    expect(resolved.x + resolved.width).toBeLessThanOrEqual(neighbor.x - SEGMENT_GAP + 0.001);
+    expect(resolved.width).toBe(50); // width/height are never changed by this function
+    expect(resolved.height).toBe(50);
+  });
+
+  it("pushes out vertically when the vertical correction is smaller than the horizontal one", () => {
+    const neighbor: SegmentRect = { x: 0, y: 40, width: 50, height: 50 };
+    const candidate: SegmentRect = { x: 0, y: 0, width: 50, height: 50 }; // bottom edge at 50, 10px into neighbor's top edge
+    const resolved = resolveNonOverlap(candidate, [neighbor]);
+    expect(resolved.x).toBe(0); // untouched
+    expect(resolved.y + resolved.height).toBeLessThanOrEqual(neighbor.y - SEGMENT_GAP + 0.001);
+  });
+
+  it("leaves at least SEGMENT_GAP between the resolved rect and the neighbor's border", () => {
+    const neighbor: SegmentRect = { x: 45, y: 0, width: 50, height: 50 };
+    const candidate: SegmentRect = { x: 0, y: 0, width: 50, height: 50 };
+    const resolved = resolveNonOverlap(candidate, [neighbor]);
+    expect(neighbor.x - (resolved.x + resolved.width)).toBeCloseTo(SEGMENT_GAP);
+  });
+
+  it("resolves against multiple neighbors, fitting into a gap exactly wide enough", () => {
+    // Left ends at x=0, right starts at x=32 — a 32px physical gap. A
+    // 20-wide candidate needs 20 + 2*SEGMENT_GAP(6) = 32 to fit
+    // cleanly, so there's exactly one legal position: x=6..26.
+    const left: SegmentRect = { x: -50, y: 0, width: 50, height: 50 };
+    const right: SegmentRect = { x: 32, y: 0, width: 50, height: 50 };
+    const candidate: SegmentRect = { x: 0, y: 0, width: 20, height: 50 }; // overlaps left's gap zone only, initially
+    const resolved = resolveNonOverlap(candidate, [left, right]);
+    expect(resolved.x).toBe(6);
+    expect(resolved.x + resolved.width).toBe(26);
+  });
+});
+
+describe("maxWidthBeforeCollision (NTA-41)", () => {
+  it("is Infinity-clamped-to-MIN when nothing blocks growth in that direction", () => {
+    expect(maxWidthBeforeCollision(0, "right", 0, 30, [])).toBe(Infinity);
+  });
+
+  it("clamps growth to the right at a neighbor's gap-expanded left edge", () => {
+    const neighbor: SegmentRect = { x: 100, y: 0, width: 50, height: 30 };
+    // Growing right from a fixed left edge at 0: can reach at most neighbor.x - SEGMENT_GAP.
+    expect(maxWidthBeforeCollision(0, "right", 0, 30, [neighbor])).toBe(100 - SEGMENT_GAP);
+  });
+
+  it("clamps growth to the left at a neighbor's gap-expanded right edge", () => {
+    const neighbor: SegmentRect = { x: 0, y: 0, width: 50, height: 30 };
+    // Growing left from a fixed right edge at 150: the moving (left) edge can reach at
+    // most neighbor's right edge + gap, i.e. width caps at fixedEdge - (that boundary).
+    expect(maxWidthBeforeCollision(150, "left", 0, 30, [neighbor])).toBe(150 - (50 + SEGMENT_GAP));
+  });
+
+  it("ignores a neighbor with no vertical overlap, even if it's otherwise in the way horizontally", () => {
+    const neighborBelow: SegmentRect = { x: 100, y: 200, width: 50, height: 30 };
+    expect(maxWidthBeforeCollision(0, "right", 0, 30, [neighborBelow])).toBe(Infinity);
+  });
+
+  it("never returns less than MIN_SEGMENT_WIDTH even if a neighbor is very close", () => {
+    const neighbor: SegmentRect = { x: 5, y: 0, width: 50, height: 30 };
+    expect(maxWidthBeforeCollision(0, "right", 0, 30, [neighbor])).toBe(MIN_SEGMENT_WIDTH);
   });
 });
 
@@ -600,5 +680,106 @@ describe("SegmentLayer: auto-grow height persistence (NTA-40)", () => {
     act(() => simulateResize(block, 32));
 
     expect(heights).toEqual([]);
+  });
+});
+
+describe("SegmentLayer: non-overlap during drag/resize/creation (NTA-41)", () => {
+  /** True if `rect` stays at least SEGMENT_GAP clear of `neighbor` on every side — re-checks the postcondition every gesture below is supposed to guarantee, without hand-predicting which axis `resolveNonOverlap` resolves along for a given scenario. */
+  function isClearOf(rect: SegmentRect, neighbor: SegmentRect, gap = SEGMENT_GAP): boolean {
+    const expanded: SegmentRect = {
+      x: neighbor.x - gap,
+      y: neighbor.y - gap,
+      width: neighbor.width + gap * 2,
+      height: neighbor.height + gap * 2,
+    };
+    return !(
+      rect.x < expanded.x + expanded.width &&
+      rect.x + rect.width > expanded.x &&
+      rect.y < expanded.y + expanded.height &&
+      rect.y + rect.height > expanded.y
+    );
+  }
+
+  it("dragging a segment toward a neighbor stops before overlapping it, maintaining the gap", () => {
+    const controller = makeController();
+    const mover = makeSegment({ id: "mover", visibility: "visible", x: 0, y: 0, width: 50, height: 30 });
+    const neighborRect: SegmentRect = { x: 200, y: 0, width: 50, height: 30 };
+    const neighbor = makeSegment({ id: "neighbor", visibility: "visible", ...neighborRect });
+    mount(<DrawHarness controller={controller} initialSegments={[mover, neighbor]} />);
+    const moverBlock = container!.querySelectorAll(".segment-block")[0] as HTMLElement;
+
+    dispatchPointerEvent(moverBlock, "pointerdown", 25, 15);
+    dispatchPointerEvent(window, "pointermove", 195, 15); // the raw (unclamped) target would land mover overlapping neighbor's gap zone
+    dispatchPointerEvent(window, "pointerup", 195, 15);
+
+    const moverAfter = container!.querySelectorAll(".segment-block")[0] as HTMLElement;
+    const resolvedRect: SegmentRect = {
+      x: parseFloat(moverAfter.style.left),
+      y: parseFloat(moverAfter.style.top),
+      width: 50,
+      height: 30,
+    };
+    expect(isClearOf(resolvedRect, neighborRect)).toBe(true);
+    expect(resolvedRect).not.toEqual({ x: 0, y: 0, width: 50, height: 30 }); // did move from its starting position, not just frozen there
+  });
+
+  it("resizing a segment's right edge toward a neighbor clamps the width, maintaining the gap", () => {
+    const controller = makeController();
+    const resizable = makeSegment({ id: "resizable", visibility: "visible", x: 0, y: 0, width: 50, height: 30 });
+    const neighborRect: SegmentRect = { x: 200, y: 0, width: 50, height: 30 };
+    const neighbor = makeSegment({ id: "neighbor", visibility: "visible", ...neighborRect });
+    mount(<DrawHarness controller={controller} initialSegments={[resizable, neighbor]} />);
+    const handle = container!.querySelector(".segment-block__resize-handle--right")!;
+
+    dispatchPointerEvent(handle, "pointerdown", 50, 15);
+    dispatchPointerEvent(window, "pointermove", 500, 15); // try to grow far past the neighbor
+    dispatchPointerEvent(window, "pointerup", 500, 15);
+
+    const block = container!.querySelectorAll(".segment-block")[0] as HTMLElement;
+    const resolvedRect: SegmentRect = { x: 0, y: 0, width: parseFloat(block.style.width), height: 30 };
+    expect(isClearOf(resolvedRect, neighborRect)).toBe(true);
+    expect(resolvedRect.width).toBeGreaterThan(50); // did grow, just not past the neighbor
+  });
+
+  it("the invisible create-on-type gesture (NTA-37) never lands a new segment overlapping an existing one", () => {
+    const controller = makeController();
+    const neighborRect: SegmentRect = { x: 60, y: 0, width: 100, height: 30 };
+    const neighbor = makeSegment({ id: "neighbor", visibility: "visible", ...neighborRect });
+    mount(<DrawHarness controller={controller} initialPointerPosition={{ x: 40, y: 10 }} initialSegments={[neighbor]} />);
+
+    dispatchKeyDown("H"); // pointer (40, 10) isn't inside the neighbor (60..160), but a default-width (240px) segment created there would overlap it heavily unless resolved
+
+    const blocks = Array.from(container!.querySelectorAll(".segment-block")) as HTMLElement[];
+    expect(blocks).toHaveLength(2);
+    const created = blocks.find((block) => block.style.left !== "60px")!;
+    const createdRect: SegmentRect = {
+      x: parseFloat(created.style.left),
+      y: parseFloat(created.style.top),
+      width: parseFloat(created.style.width),
+      height: parseFloat(created.style.minHeight),
+    };
+    expect(isClearOf(createdRect, neighborRect)).toBe(true);
+  });
+
+  it("deliberate visible creation (NTA-38, plain click) never lands a new segment overlapping an existing one", () => {
+    const controller = makeController();
+    const neighborRect: SegmentRect = { x: 60, y: 0, width: 100, height: 30 };
+    const neighbor = makeSegment({ id: "neighbor", visibility: "visible", ...neighborRect });
+    mount(<DrawHarness controller={controller} initialPointerPosition={{ x: 40, y: 10 }} initialSegments={[neighbor]} />);
+
+    act(() => controller.armCreateVisible());
+    dispatchPointer("pointerdown");
+    dispatchPointer("pointerup");
+
+    const blocks = Array.from(container!.querySelectorAll(".segment-block")) as HTMLElement[];
+    expect(blocks).toHaveLength(2);
+    const created = blocks.find((block) => block.style.left !== "60px")!;
+    const createdRect: SegmentRect = {
+      x: parseFloat(created.style.left),
+      y: parseFloat(created.style.top),
+      width: parseFloat(created.style.width),
+      height: parseFloat(created.style.minHeight),
+    };
+    expect(isClearOf(createdRect, neighborRect)).toBe(true);
   });
 });
