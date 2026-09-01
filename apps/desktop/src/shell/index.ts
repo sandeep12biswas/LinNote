@@ -56,6 +56,14 @@
 // (cascade soft-delete itself was already NTA-49's `deleteNode`), plus a
 // background sweep purging anything past the retention window.
 //
+// NTA-56 adds three things to this directory: `FolderTreePane`/
+// `PageListPane` now render through `react-window`'s `FixedSizeList`
+// (backed by `./useElementSize.ts`, sized via `./virtualization.ts`'s
+// shared row-height constant) instead of a plain `.map(...)`, so a large
+// tree/page list only ever mounts the rows currently scrolled into view;
+// `SearchBox` (./SearchBox.tsx) + `./searchNavigation.ts` give the new
+// incremental search index (../search/) a place in the running app.
+//
 // TODO(NTA-53): same-parent fractional-index drag-reorder polish is a
 // separate subtask of the same parent story (NTA-43) — not built here.
 
@@ -230,3 +238,9 @@ export { TrashPane } from "./TrashPane";
 export type { TrashPaneProps } from "./TrashPane";
 export { buildTrashList } from "./trash";
 export type { TrashRow } from "./trash";
+export { SearchBox } from "./SearchBox";
+export { resolveSearchResultSelection } from "./searchNavigation";
+export type { SearchResultSelection } from "./searchNavigation";
+export { useElementSize } from "./useElementSize";
+export type { ElementSize } from "./useElementSize";
+export { PANE_ROW_HEIGHT } from "./virtualization";

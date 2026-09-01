@@ -16,8 +16,15 @@
 // work (§9 — "Undo/redo, model & persistence") and are stubbed below so the
 // class satisfies `PersistenceProvider` without pretending they work yet.
 //
-// TODO(phase-2): in-memory search index (MiniSearch) built from titles +
-// extracted text content at startup/on save (§15.1).
+// The in-memory search index (MiniSearch) built from titles + extracted
+// text content this TODO used to describe is now NTA-56 —
+// ../search/index.ts — built at startup from `useWorkspaceTreeStore`'s
+// nodes and kept incrementally in sync as they change; not implemented
+// here, since it indexes the workspace tree store directly rather than
+// going through `PersistenceProvider`. Extracted *page* text specifically
+// is still TODO(phase-3/phase-8): `readPage`/`writePage` below are still
+// "not implemented", and the Editor Canvas that would produce extractable
+// text doesn't exist yet either — see ../search/index.ts's doc comment.
 
 import {
   BaseDirectory,

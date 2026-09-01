@@ -105,6 +105,82 @@ button {
   box-shadow: none;
 }
 
+/* ---- Search box (NTA-56) ---- */
+
+.search-box {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 0.4em 0.5em;
+  border-bottom: 1px solid #d9d9d9;
+  background-color: #fafafa;
+}
+
+.search-box__input {
+  width: 100%;
+  max-width: 22em;
+  font: inherit;
+  padding: 0.3em 0.6em;
+  border: 1px solid #d9d9d9;
+  border-radius: 0.3em;
+}
+
+.search-box__results {
+  position: absolute;
+  z-index: 15;
+  top: 100%;
+  left: 0.5em;
+  width: 22em;
+  max-width: calc(100% - 1em);
+  max-height: 16em;
+  overflow: auto;
+  margin: 0.15em 0 0;
+  padding: 0.25em 0;
+  list-style: none;
+  background-color: #ffffff;
+  border: 1px solid #d9d9d9;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 0.3em;
+}
+
+.search-box__result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0.35em 0.75em;
+  font-size: 0.9em;
+}
+
+.search-box__result:hover {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.search-box__result-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-box__result-type {
+  flex: 0 0 auto;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.5;
+}
+
+.search-box__empty {
+  padding: 0.35em 0.75em;
+  font-size: 0.85em;
+  opacity: 0.6;
+}
+
 .app-shell__main {
   display: flex;
   flex: 1 1 auto;
@@ -112,7 +188,10 @@ button {
 }
 
 .app-shell__pane {
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
   padding: 0.75em;
 }
 
@@ -196,10 +275,30 @@ button {
   cursor: default;
 }
 
+/* NTA-56: `.folder-tree`/`.folder-tree__viewport`/`.page-list__viewport`
+   must each fill the vertical space their parent gives them (rather than
+   sizing to content, as before) — `react-window`'s `FixedSizeList` needs
+   an actual measured pixel height (see ../shell/useElementSize.ts) to
+   know how many rows to mount. */
+.folder-tree {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.folder-tree__viewport,
+.page-list__viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .folder-tree__row {
   display: flex;
   align-items: center;
   gap: 0.3em;
+  height: 32px;
+  box-sizing: border-box;
   padding: 0.2em 0.3em;
   border-radius: 0.25em;
   cursor: pointer;
@@ -294,8 +393,11 @@ button {
 }
 
 .page-list__item {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
+  height: 32px;
+  box-sizing: border-box;
   text-align: left;
   border: none;
   background: transparent;
@@ -572,14 +674,27 @@ button {
   .menu-bar,
   .app-shell__pane--folder-tree,
   .app-shell__pane--page-list,
-  .plugins-status-panel {
+  .plugins-status-panel,
+  .search-box {
     border-color: #4a4a4a;
   }
 
   .menu-bar,
   .toolbar,
-  .plugins-status-panel {
+  .plugins-status-panel,
+  .search-box {
     background-color: #1f1f1f;
+  }
+
+  .search-box__input,
+  .search-box__results {
+    background-color: #2a2a2a;
+    border-color: #4a4a4a;
+    color: inherit;
+  }
+
+  .search-box__result:hover {
+    background-color: rgba(255, 255, 255, 0.08);
   }
 
   .plugins-status-panel__item {

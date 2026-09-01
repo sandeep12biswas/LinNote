@@ -30,6 +30,11 @@
 // `TrashPane` (./TrashPane.tsx) as an overlay above the pane split —
 // structural, not a plugin contribution, so it lives here rather than
 // going through the menu bar's registry-driven contributions.
+//
+// NTA-56: `FolderTreePane`/`PageListPane` now virtualize their row
+// rendering internally (see their own doc comments); `SearchBox`
+// (./SearchBox.tsx) is new here, giving the incremental search index
+// (../search/) a place in the running app.
 
 import { useState } from "react";
 import { buildMenuBar, buildToolbar } from "./index";
@@ -40,6 +45,7 @@ import { FolderTreePane } from "./FolderTreePane";
 import { PageListPane } from "./PageListPane";
 import { BreadcrumbTrail } from "./BreadcrumbTrail";
 import { TrashPane } from "./TrashPane";
+import { SearchBox } from "./SearchBox";
 import type { RegisteredPlugin } from "../registry";
 
 export interface AppShellProps {
@@ -56,6 +62,7 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
     <div className="app-shell">
       <MenuBar model={menuBarModel} onRunCommand={onRunCommand} />
       <Toolbar model={toolbarModel} onRunCommand={onRunCommand} />
+      <SearchBox />
       <div className="app-shell__main">
         <section className="app-shell__pane app-shell__pane--folder-tree" aria-label="Folder Tree">
           <div className="app-shell__pane-header">
