@@ -70,23 +70,38 @@ handling, 4-region app shell, plugin-settings persistence. Verified in code:
 
 ## Cross-cutting — Finish core.* plugin activation wiring 🟡
 
-Stub (no-op) activation for every plugin, proving registry→shell→command
-plumbing works end-to-end. 2 of 15 done (bold, italic — verified in code as
-no-op stubs with a real menu entry). Do the rest now, before diving into any
-one phase below.
+Originally scoped as stub (no-op) activation for every plugin, proving
+registry→shell→command plumbing works end-to-end. In practice, 4 of 15 are
+now done — but 2 of those (headers, text-segment) skipped the stub step
+entirely and went straight to their real Phase 3/4/6 implementation
+(NTA-42, NTA-37-41) once that work existed, rather than a separate
+no-op-then-replace pass. **Decided or after NTA-42**: don't bother with a
+throwaway stub for the rest either — most of the remaining 11 already have
+a real-build ticket later in this list (Phase 5 §NTA-44 covers
+font-color/font-size/bullet-list/checkbox-list/alignment; Phase 7 §NTA-45
+covers file-attachment/youtube-embed; Phase 10 §NTA-48 covers both sync
+providers), so their real work will close these out the same way. **Gap
+found**: ink (NTA-25) and image (NTA-27) have no real-build ticket
+anywhere in this list — Phase 3's own description mentions "ink element
+type" but the NTA-32 story that got created for Phase 3 never actually
+included it (only viewport/header/background/segments); nothing beyond
+these two stubs and Phase 9's ink *performance* tickets (NTA-73/74,
+tiling — not the initial implementation) covers them. Needs a decision:
+either a new ticket for ink/image's real build, or fold them into an
+existing phase.
 
 - [ ] [NTA-16](https://sandeep12biswas.atlassian.net/browse/NTA-16) — Integration: activate all core.* plugins end-to-end 🟡
   - [x] [NTA-17](https://sandeep12biswas.atlassian.net/browse/NTA-17) core.format.bold
   - [x] [NTA-18](https://sandeep12biswas.atlassian.net/browse/NTA-18) core.format.italic
   - [ ] [NTA-19](https://sandeep12biswas.atlassian.net/browse/NTA-19) core.format.font-color
   - [ ] [NTA-20](https://sandeep12biswas.atlassian.net/browse/NTA-20) core.format.font-size
-  - [ ] [NTA-21](https://sandeep12biswas.atlassian.net/browse/NTA-21) core.format.headers
+  - [x] [NTA-21](https://sandeep12biswas.atlassian.net/browse/NTA-21) core.format.headers — real implementation via NTA-42, not a separate stub
   - [ ] [NTA-22](https://sandeep12biswas.atlassian.net/browse/NTA-22) core.format.bullet-list
   - [ ] [NTA-23](https://sandeep12biswas.atlassian.net/browse/NTA-23) core.format.checkbox-list
   - [ ] [NTA-24](https://sandeep12biswas.atlassian.net/browse/NTA-24) core.format.alignment
-  - [ ] [NTA-25](https://sandeep12biswas.atlassian.net/browse/NTA-25) core.element.ink
-  - [ ] [NTA-26](https://sandeep12biswas.atlassian.net/browse/NTA-26) core.element.text-segment
-  - [ ] [NTA-27](https://sandeep12biswas.atlassian.net/browse/NTA-27) core.element.image
+  - [ ] [NTA-25](https://sandeep12biswas.atlassian.net/browse/NTA-25) core.element.ink — ⚠️ no real-build ticket exists yet, see note above
+  - [x] [NTA-26](https://sandeep12biswas.atlassian.net/browse/NTA-26) core.element.text-segment — real implementation via NTA-37-41, not a separate stub
+  - [ ] [NTA-27](https://sandeep12biswas.atlassian.net/browse/NTA-27) core.element.image — ⚠️ no real-build ticket exists yet, see note above
   - [ ] [NTA-28](https://sandeep12biswas.atlassian.net/browse/NTA-28) core.element.file-attachment
   - [ ] [NTA-29](https://sandeep12biswas.atlassian.net/browse/NTA-29) core.element.youtube-embed
   - [ ] [NTA-30](https://sandeep12biswas.atlassian.net/browse/NTA-30) core.sync.onedrive
