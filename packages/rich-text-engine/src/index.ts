@@ -16,6 +16,9 @@
 // absolutely-positioned overlay as SegmentBlock (Desing architecture §7)
 // — is deliberately left to the SegmentBlock renderer
 // (plugins/element-text-segment, NTA-37/38), not this package.
+//
+// activeEditor.ts (NTA-42): the "last focused editor" a `plugins/format-*`
+// command runs against — see that file's own header comment.
 
 export type { Editor as TipTapEditor } from "@tiptap/core";
 
@@ -39,3 +42,5 @@ export {
   type RichTextEngineContextValue,
   type RichTextEngineProviderProps,
 } from "./RichTextEngineProvider";
+
+export { clearActiveEditorIfCurrent, getActiveEditor, setActiveEditor } from "./activeEditor";

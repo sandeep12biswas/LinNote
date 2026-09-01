@@ -15,10 +15,17 @@
 // them"). The SegmentBlock renderer (plugins/element-text-segment,
 // NTA-37/38) reads `editor` via `useRichTextEditor()` and renders
 // `EditorContent` itself.
+//
+// NTA-42: also reports focus/destroy to ./activeEditor.ts's "last
+// focused editor" tracker — see that file's own header comment for why
+// a `plugins/format-*` command needs it rather than just reading
+// `useRichTextEditor()` itself (a command isn't a React component, it
+// has no props/context to read from).
 
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
 import type { Editor, AnyExtension } from "@tiptap/core";
 import { useEditor } from "@tiptap/react";
+import { clearActiveEditorIfCurrent, setActiveEditor } from "./activeEditor";
 import { createBaseExtensions, type RichTextDoc } from "./richTextEditor";
 
 export interface RichTextEngineContextValue {
@@ -74,7 +81,16 @@ export function RichTextEngineProvider({
     editable,
     immediatelyRender: true,
     onUpdate: ({ editor: updated }) => onChange?.(updated.getJSON()),
+    onFocus: ({ editor: focused }) => setActiveEditor(focused),
   });
+
+  // Guards against a destroyed editor lingering as the tracked "last
+  // focused" one (see ./activeEditor.ts) — e.g. a segment removed while
+  // it was still the most recently focused.
+  useEffect(() => {
+    if (!editor) return;
+    return () => clearActiveEditorIfCurrent(editor);
+  }, [editor]);
 
   const value = useMemo<RichTextEngineContextValue>(() => ({ editor }), [editor]);
 
