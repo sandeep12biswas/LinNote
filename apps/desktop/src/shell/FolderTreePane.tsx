@@ -16,12 +16,27 @@
 // TODO(NTA-53): dropping a node only appends it to the end of the target
 // folder's children (or, via the "Move" menu, likewise) — same-parent
 // drag-to-reorder with precise sibling positioning is that subtask.
+//
+// NTA-56: rows are rendered through `react-window`'s `FixedSizeList`
+// instead of a plain `rows.map(...)`, so a workspace with thousands of
+// expanded nodes only ever mounts the handful of rows actually visible in
+// the pane, not every row up front. `buildFolderTree` (./folderTree.ts)
+// itself was already "lazy" in the sense that matters here — it only
+// walks into a folder's children once that folder is in `expandedIds`, a
+// collapsed subtree isn't visited at all — this ticket's addition is
+// virtualizing the *rendering* of whatever `buildFolderTree` does return.
+// `useElementSize` (./useElementSize.ts) measures the pane's actual
+// available height (no `AutoSizer` package is a dependency here, see that
+// file's doc comment) since `FixedSizeList` needs an explicit `height`.
 
 import { useState } from "react";
+import { FixedSizeList, type ListChildComponentProps } from "react-window";
 import type { WorkspaceNode } from "../types";
 import { useNavigationStore } from "../store";
 import { getDescendantIds, useWorkspaceTreeStore } from "../workspace";
 import { buildFolderTree, canReparent } from "./folderTree";
+import { useElementSize } from "./useElementSize";
+import { PANE_ROW_HEIGHT } from "./virtualization";
 
 type ContextMenuMode = "menu" | "move";
 
@@ -50,6 +65,7 @@ export function FolderTreePane() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [viewportRef, viewportSize] = useElementSize<HTMLDivElement>();
 
   const rows = buildFolderTree(nodes, expandedIds);
 
@@ -107,84 +123,103 @@ export function FolderTreePane() {
       ? nodes.filter((n) => n.type !== "page" && n.trashedAt == null && canReparent(nodes, contextMenu.nodeId, n.id))
       : [];
 
+  // Row renderer handed to `react-window`'s `FixedSizeList` (NTA-56) —
+  // same JSX/behavior the plain `rows.map(...)` used to build inline,
+  // just addressed by `index` into `rows` instead of closing over one
+  // `row` directly, since `FixedSizeList` only mounts this for the rows
+  // currently scrolled into view.
+  function renderRow({ index, style }: ListChildComponentProps) {
+    const row = rows[index];
+    const isDraggable = row.node.type !== "notebook";
+    const rowClassName = [
+      "folder-tree__row",
+      row.node.id === selectedFolderId && "folder-tree__row--selected",
+      row.node.id === dropTargetId && "folder-tree__row--drop-target",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    return (
+      <div
+        className={rowClassName}
+        style={{ ...style, paddingLeft: `${row.depth * 1.1}em` }}
+        draggable={isDraggable}
+        onDragStart={() => isDraggable && setDraggedId(row.node.id)}
+        onDragEnd={() => {
+          setDraggedId(null);
+          setDropTargetId(null);
+        }}
+        onDragOver={(e) => {
+          if (draggedId && canReparent(nodes, draggedId, row.node.id)) {
+            e.preventDefault();
+            setDropTargetId(row.node.id);
+          }
+        }}
+        onDragLeave={() => setDropTargetId((current) => (current === row.node.id ? null : current))}
+        onDrop={(e) => {
+          e.preventDefault();
+          handleDrop(row.node.id);
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setSelectedFolder(row.node.id);
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setContextMenu({ nodeId: row.node.id, x: e.clientX, y: e.clientY, mode: "menu" });
+        }}
+      >
+        <button
+          type="button"
+          className="folder-tree__disclosure"
+          aria-label={row.isExpanded ? "Collapse" : "Expand"}
+          disabled={!row.hasChildren}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleExpanded(row.node.id);
+          }}
+        >
+          {row.hasChildren ? (row.isExpanded ? "▾" : "▸") : ""}
+        </button>
+
+        {row.node.id === renamingId ? (
+          <input
+            autoFocus
+            className="folder-tree__rename-input"
+            value={renameValue}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename();
+              if (e.key === "Escape") setRenamingId(null);
+            }}
+          />
+        ) : (
+          <span className="folder-tree__label">{row.node.title}</span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="folder-tree" onClick={() => setContextMenu(null)}>
       {rows.length === 0 && <p className="folder-tree__empty">No notebooks yet.</p>}
 
-      {rows.map((row) => {
-        const isDraggable = row.node.type !== "notebook";
-        const rowClassName = [
-          "folder-tree__row",
-          row.node.id === selectedFolderId && "folder-tree__row--selected",
-          row.node.id === dropTargetId && "folder-tree__row--drop-target",
-        ]
-          .filter(Boolean)
-          .join(" ");
-
-        return (
-          <div
-            key={row.node.id}
-            className={rowClassName}
-            style={{ paddingLeft: `${row.depth * 1.1}em` }}
-            draggable={isDraggable}
-            onDragStart={() => isDraggable && setDraggedId(row.node.id)}
-            onDragEnd={() => {
-              setDraggedId(null);
-              setDropTargetId(null);
-            }}
-            onDragOver={(e) => {
-              if (draggedId && canReparent(nodes, draggedId, row.node.id)) {
-                e.preventDefault();
-                setDropTargetId(row.node.id);
-              }
-            }}
-            onDragLeave={() => setDropTargetId((current) => (current === row.node.id ? null : current))}
-            onDrop={(e) => {
-              e.preventDefault();
-              handleDrop(row.node.id);
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedFolder(row.node.id);
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setContextMenu({ nodeId: row.node.id, x: e.clientX, y: e.clientY, mode: "menu" });
-            }}
+      {rows.length > 0 && (
+        <div className="folder-tree__viewport" ref={viewportRef}>
+          <FixedSizeList
+            height={viewportSize.height}
+            width={viewportSize.width}
+            itemCount={rows.length}
+            itemSize={PANE_ROW_HEIGHT}
+            itemKey={(index) => rows[index].node.id}
           >
-            <button
-              type="button"
-              className="folder-tree__disclosure"
-              aria-label={row.isExpanded ? "Collapse" : "Expand"}
-              disabled={!row.hasChildren}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleExpanded(row.node.id);
-              }}
-            >
-              {row.hasChildren ? (row.isExpanded ? "▾" : "▸") : ""}
-            </button>
-
-            {row.node.id === renamingId ? (
-              <input
-                autoFocus
-                className="folder-tree__rename-input"
-                value={renameValue}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onBlur={commitRename}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitRename();
-                  if (e.key === "Escape") setRenamingId(null);
-                }}
-              />
-            ) : (
-              <span className="folder-tree__label">{row.node.title}</span>
-            )}
-          </div>
-        );
-      })}
+            {renderRow}
+          </FixedSizeList>
+        </div>
+      )}
 
       {contextMenu && contextMenu.mode === "menu" && (
         <ul className="folder-tree__context-menu" style={{ top: contextMenu.y, left: contextMenu.x }} role="menu">

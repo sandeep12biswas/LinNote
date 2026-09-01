@@ -19,6 +19,11 @@
 // (./FolderTreePane.tsx, ./PageListPane.tsx), backed by the in-memory
 // `WorkspaceNode` tree store (../workspace/). The Editor Canvas pane
 // itself is still Phase 3 (NTA-32) — not this ticket.
+//
+// NTA-56: `FolderTreePane`/`PageListPane` now virtualize their row
+// rendering internally (see their own doc comments); `SearchBox`
+// (./SearchBox.tsx) is new here, giving the incremental search index
+// (../search/) a place in the running app.
 
 import { buildMenuBar, buildToolbar } from "./index";
 import { MenuBar } from "./MenuBar";
@@ -26,6 +31,7 @@ import { Toolbar } from "./Toolbar";
 import { PluginsStatusPanel } from "./PluginsStatusPanel";
 import { FolderTreePane } from "./FolderTreePane";
 import { PageListPane } from "./PageListPane";
+import { SearchBox } from "./SearchBox";
 import type { RegisteredPlugin } from "../registry";
 
 export interface AppShellProps {
@@ -41,6 +47,7 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
     <div className="app-shell">
       <MenuBar model={menuBarModel} onRunCommand={onRunCommand} />
       <Toolbar model={toolbarModel} onRunCommand={onRunCommand} />
+      <SearchBox />
       <div className="app-shell__main">
         <section className="app-shell__pane app-shell__pane--folder-tree" aria-label="Folder Tree">
           <h2 className="app-shell__pane-label">Folder Tree</h2>

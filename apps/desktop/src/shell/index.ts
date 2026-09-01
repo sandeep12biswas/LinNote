@@ -44,6 +44,14 @@
 // fractional-index drag-reorder polish, a trash UI, and the breadcrumb
 // trail above the editor canvas are separate subtasks of the same parent
 // story (NTA-43) — not built here.
+//
+// NTA-56 adds three things to this directory: `FolderTreePane`/
+// `PageListPane` now render through `react-window`'s `FixedSizeList`
+// (backed by `./useElementSize.ts`, sized via `./virtualization.ts`'s
+// shared row-height constant) instead of a plain `.map(...)`, so a large
+// tree/page list only ever mounts the rows currently scrolled into view;
+// `SearchBox` (./SearchBox.tsx) + `./searchNavigation.ts` give the new
+// incremental search index (../search/) a place in the running app.
 
 import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { RegisteredPlugin } from "../registry";
@@ -201,3 +209,9 @@ export type { FolderTreeRow } from "./folderTree";
 export { PageListPane } from "./PageListPane";
 export { buildPageList } from "./pageList";
 export type { PageListRow } from "./pageList";
+export { SearchBox } from "./SearchBox";
+export { resolveSearchResultSelection } from "./searchNavigation";
+export type { SearchResultSelection } from "./searchNavigation";
+export { useElementSize } from "./useElementSize";
+export type { ElementSize } from "./useElementSize";
+export { PANE_ROW_HEIGHT } from "./virtualization";
