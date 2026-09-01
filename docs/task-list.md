@@ -192,6 +192,25 @@ activation above.
 
 ---
 
+## Cross-cutting — Visual design system (theming) ⚪ NOT STARTED
+
+Not part of the original phase breakdown — added 2026-09-01 at explicit
+user request, after noting the app's dark mode is just inherited
+`create-tauri-app` scaffold boilerplate (one ad hoc `@media
+(prefers-color-scheme: dark)` block, hardcoded hex values, no token
+system, no in-app toggle) and that several recently-built components
+(NTA-34/35/37/38) have zero dark-mode coverage. Purely presentational —
+doesn't touch the data model — so not sequenced relative to the numbered
+phases above; pick up whenever, independent of Phase 3-11 progress.
+
+- [ ] [NTA-85](https://sandeep12biswas.atlassian.net/browse/NTA-85) — Visual design system: modern styling, selectable color themes, and dark/light mode
+  - [ ] [NTA-86](https://sandeep12biswas.atlassian.net/browse/NTA-86) CSS design tokens: colors, spacing, radii, shadows, typography scale
+  - [ ] [NTA-87](https://sandeep12biswas.atlassian.net/browse/NTA-87) Modern visual refresh: elevation, spacing rhythm, typography, transitions
+  - [ ] [NTA-88](https://sandeep12biswas.atlassian.net/browse/NTA-88) Light/Dark mode toggle, user-selectable and persisted
+  - [ ] [NTA-89](https://sandeep12biswas.atlassian.net/browse/NTA-89) Selectable color themes (accent palette presets)
+
+---
+
 ## Phase 11 — Stretch (not sequenced, no Jira story)
 
 Handwriting recognition, cross-page linking/backlinks,
