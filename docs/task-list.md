@@ -152,17 +152,17 @@ segment drag/resize were.
   - [ ] [NTA-92](https://sandeep12biswas.atlassian.net/browse/NTA-92) Tool selection: pen/highlighter/eraser modes, color & size, toolbar-armed draw gesture
   - [ ] [NTA-93](https://sandeep12biswas.atlassian.net/browse/NTA-93) Eraser: whole-stroke and pixel/segment erase modes
 
-## Phase 5 — Remaining formatting plugins (build) ⚪ NOT STARTED
+## Phase 5 — Remaining formatting plugins (build) ✅ DONE
 
 Font-color, font-size, bullet-list, checkbox-list, alignment — real logic,
 beyond the stub activation above. Same pattern as NTA-42.
 
-- [ ] [NTA-44](https://sandeep12biswas.atlassian.net/browse/NTA-44) — Phase 5: Remaining formatting plugins (build)
+- [x] [NTA-44](https://sandeep12biswas.atlassian.net/browse/NTA-44) — Phase 5: Remaining formatting plugins (build)
   - [x] [NTA-57](https://sandeep12biswas.atlassian.net/browse/NTA-57) core.format.font-color: text color mark + core.util.contrast default suggestion
-  - [ ] [NTA-58](https://sandeep12biswas.atlassian.net/browse/NTA-58) core.format.font-size: text size mark
-  - [ ] [NTA-59](https://sandeep12biswas.atlassian.net/browse/NTA-59) core.format.bullet-list: bulleted list node
-  - [ ] [NTA-60](https://sandeep12biswas.atlassian.net/browse/NTA-60) core.format.checkbox-list: checkable to-do list node
-  - [ ] [NTA-61](https://sandeep12biswas.atlassian.net/browse/NTA-61) core.format.alignment: paragraph/segment alignment
+  - [x] [NTA-58](https://sandeep12biswas.atlassian.net/browse/NTA-58) core.format.font-size: text size mark
+  - [x] [NTA-59](https://sandeep12biswas.atlassian.net/browse/NTA-59) core.format.bullet-list: bulleted list node
+  - [x] [NTA-60](https://sandeep12biswas.atlassian.net/browse/NTA-60) core.format.checkbox-list: checkable to-do list node
+  - [x] [NTA-61](https://sandeep12biswas.atlassian.net/browse/NTA-61) core.format.alignment: paragraph/segment alignment
 
 ## Phase 7 — Attachments & embeds (build) ⚪ NOT STARTED
 
