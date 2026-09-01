@@ -17,6 +17,12 @@
 // the shared `CommandBus`, overwriting the console.log fallback the
 // plugin's own activate() registers (see plugins/element-text-segment/
 // src/index.ts's header comment and registry/createContext.ts's).
+//
+// NTA-39 also passes `screenToCanvas` straight through from
+// `useCanvasCoordinates()` (already used for `pointerPosition`) — the
+// drag/reposition gesture needs it directly; see `SegmentLayer`'s own
+// header comment for why `pointerPosition` alone isn't enough for that
+// one gesture.
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { CREATE_VISIBLE_SEGMENT_COMMAND, SegmentLayer, type SegmentBlockData } from "@linnote/plugin-element-text-segment";
@@ -51,7 +57,7 @@ export function SegmentLayerHost({ pageId, commandBus }: SegmentLayerHostProps) 
   const notePage = useNotePageStore((state) => state.pages[pageId]);
   const addElement = useNotePageStore((state) => state.addElement);
   const updateElement = useNotePageStore((state) => state.updateElement);
-  const { pointerPosition, setPanSuppressed } = useCanvasCoordinates();
+  const { pointerPosition, screenToCanvas, setPanSuppressed } = useCanvasCoordinates();
 
   const segments = useMemo(
     () => (notePage ? notePage.elements.filter(isSegment).map(toSegmentBlockData) : []),
@@ -68,6 +74,13 @@ export function SegmentLayerHost({ pageId, commandBus }: SegmentLayerHostProps) 
   const handleSegmentContentChange = useCallback(
     (id: string, content: RichTextDoc) => {
       updateElement(pageId, id, (element) => ({ ...element, content }) as CanvasElement);
+    },
+    [pageId, updateElement],
+  );
+
+  const handleMoveSegment = useCallback(
+    (id: string, x: number, y: number) => {
+      updateElement(pageId, id, (element) => ({ ...element, x, y }) as CanvasElement);
     },
     [pageId, updateElement],
   );
@@ -94,6 +107,8 @@ export function SegmentLayerHost({ pageId, commandBus }: SegmentLayerHostProps) 
       pointerPosition={pointerPosition}
       onCreateSegment={handleCreateSegment}
       onSegmentContentChange={handleSegmentContentChange}
+      onMoveSegment={handleMoveSegment}
+      screenToCanvas={screenToCanvas}
       onCreateVisibleSegmentReady={handleCreateVisibleSegmentReady}
       setPanSuppressed={setPanSuppressed}
     />

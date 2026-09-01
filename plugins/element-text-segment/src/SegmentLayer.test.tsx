@@ -30,6 +30,11 @@ function dispatchKeyDown(key: string): void {
   });
 }
 
+/** Fake `screenToCanvas` for tests — canvas-core's real one undoes pan/zoom; tests just need clientX/clientY to pass through unchanged (1:1 scale, no pan), consistent with how these tests treat "screen" and "canvas" space as the same numbers throughout. */
+function identityScreenToCanvas(clientX: number, clientY: number): CanvasPoint {
+  return { x: clientX, y: clientY };
+}
+
 function makeSegment(overrides: Partial<SegmentBlockData> = {}): SegmentBlockData {
   return {
     id: "segment-1",
@@ -57,12 +62,18 @@ function Harness({ pointerPosition }: { pointerPosition: { x: number; y: number 
     setSegments((current) => current.map((segment) => (segment.id === id ? { ...segment, content } : segment)));
   }, []);
 
+  const handleMove = useCallback((id: string, x: number, y: number) => {
+    setSegments((current) => current.map((segment) => (segment.id === id ? { ...segment, x, y } : segment)));
+  }, []);
+
   return (
     <SegmentLayer
       segments={segments}
       pointerPosition={pointerPosition}
       onCreateSegment={handleCreate}
       onSegmentContentChange={handleContentChange}
+      onMoveSegment={handleMove}
+      screenToCanvas={identityScreenToCanvas}
     />
   );
 }
@@ -88,8 +99,16 @@ function makeController(): Controller {
   };
 }
 
-function DrawHarness({ controller, initialPointerPosition = null }: { controller: Controller; initialPointerPosition?: CanvasPoint | null }) {
-  const [segments, setSegments] = useState<SegmentBlockData[]>([]);
+function DrawHarness({
+  controller,
+  initialPointerPosition = null,
+  initialSegments = [],
+}: {
+  controller: Controller;
+  initialPointerPosition?: CanvasPoint | null;
+  initialSegments?: SegmentBlockData[];
+}) {
+  const [segments, setSegments] = useState<SegmentBlockData[]>(initialSegments);
   const [pointerPosition, setPointerPosition] = useState<CanvasPoint | null>(initialPointerPosition);
   controller.setPointerPosition = setPointerPosition;
 
@@ -98,6 +117,9 @@ function DrawHarness({ controller, initialPointerPosition = null }: { controller
   }, []);
   const handleContentChange = useCallback((id: string, content: SegmentBlockData["content"]) => {
     setSegments((current) => current.map((segment) => (segment.id === id ? { ...segment, content } : segment)));
+  }, []);
+  const handleMove = useCallback((id: string, x: number, y: number) => {
+    setSegments((current) => current.map((segment) => (segment.id === id ? { ...segment, x, y } : segment)));
   }, []);
   const handleReady = useCallback(
     (arm: () => void) => {
@@ -118,6 +140,8 @@ function DrawHarness({ controller, initialPointerPosition = null }: { controller
       pointerPosition={pointerPosition}
       onCreateSegment={handleCreate}
       onSegmentContentChange={handleContentChange}
+      onMoveSegment={handleMove}
+      screenToCanvas={identityScreenToCanvas}
       onCreateVisibleSegmentReady={handleReady}
       setPanSuppressed={setPanSuppressed}
     />
@@ -127,6 +151,19 @@ function DrawHarness({ controller, initialPointerPosition = null }: { controller
 function dispatchPointer(type: "pointerdown" | "pointerup", button = 0): void {
   act(() => {
     window.dispatchEvent(new PointerEvent(type, { button, bubbles: true }));
+  });
+}
+
+/** Like `dispatchPointer`, but on an arbitrary target with real coordinates — NTA-39's drag gesture needs `clientX`/`clientY` (fed through `identityScreenToCanvas` above) and, for a border-vs-content pointerdown, a specific `target` (not always `window`). */
+function dispatchPointerEvent(
+  target: EventTarget,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  clientX = 0,
+  clientY = 0,
+  button = 0,
+): void {
+  act(() => {
+    target.dispatchEvent(new PointerEvent(type, { button, clientX, clientY, bubbles: true }));
   });
 }
 
@@ -166,6 +203,8 @@ describe("SegmentLayer: rendering existing segments", () => {
           pointerPosition={null}
           onCreateSegment={() => {}}
           onSegmentContentChange={() => {}}
+          onMoveSegment={() => {}}
+          screenToCanvas={identityScreenToCanvas}
         />
       );
     }
@@ -326,5 +365,109 @@ describe("SegmentLayer: deliberate visible creation (NTA-38)", () => {
     dispatchPointer("pointerdown");
     dispatchPointer("pointerup");
     expect(container!.querySelector(".segment-block")?.className).toContain("segment-block--visible");
+  });
+});
+
+describe("SegmentLayer: drag/reposition an existing segment (NTA-39)", () => {
+  it("grabbing the border and dragging updates the segment's position, suppressing then releasing pan", () => {
+    const controller = makeController();
+    const segment = makeSegment({ id: "seg-1", visibility: "visible", x: 50, y: 50, width: 100, height: 30 });
+    mount(<DrawHarness controller={controller} initialSegments={[segment]} />);
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+
+    dispatchPointerEvent(block, "pointerdown", 60, 60); // grabs the border/padding — target === currentTarget
+    dispatchPointerEvent(window, "pointermove", 90, 80); // +30, +20
+    dispatchPointerEvent(window, "pointerup", 90, 80);
+
+    expect(block.style.left).toBe("80px");
+    expect(block.style.top).toBe("70px");
+    expect(controller.panSuppressedCalls).toEqual([true, false]);
+  });
+
+  it("updates position live on every pointermove during the drag, not only once on release", () => {
+    const controller = makeController();
+    const segment = makeSegment({ id: "seg-1", visibility: "visible", x: 0, y: 0, width: 100, height: 30 });
+    mount(<DrawHarness controller={controller} initialSegments={[segment]} />);
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+
+    dispatchPointerEvent(block, "pointerdown", 0, 0);
+    dispatchPointerEvent(window, "pointermove", 10, 5);
+    expect(block.style.left).toBe("10px");
+    expect(block.style.top).toBe("5px");
+
+    dispatchPointerEvent(window, "pointermove", 25, 15);
+    expect(block.style.left).toBe("25px");
+    expect(block.style.top).toBe("15px");
+
+    dispatchPointerEvent(window, "pointerup", 25, 15);
+  });
+
+  it("grabbing the text content, not the border, does not start a drag — normal caret placement is left alone", () => {
+    const controller = makeController();
+    const segment = makeSegment({ id: "seg-1", visibility: "visible", x: 50, y: 50, width: 100, height: 30 });
+    mount(<DrawHarness controller={controller} initialSegments={[segment]} />);
+    const prose = container!.querySelector(".ProseMirror")!;
+
+    dispatchPointerEvent(prose, "pointerdown", 60, 60); // target is the ProseMirror content, not the wrapper
+    dispatchPointerEvent(window, "pointermove", 200, 200);
+    dispatchPointerEvent(window, "pointerup", 200, 200);
+
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+    expect(block.style.left).toBe("50px");
+    expect(block.style.top).toBe("50px");
+    expect(controller.panSuppressedCalls).toEqual([]); // never started dragging, so pan suppression was never touched
+  });
+
+  it("ignores a non-primary-button press on the border", () => {
+    const controller = makeController();
+    const segment = makeSegment({ id: "seg-1", visibility: "visible", x: 5, y: 5, width: 100, height: 30 });
+    mount(<DrawHarness controller={controller} initialSegments={[segment]} />);
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+
+    dispatchPointerEvent(block, "pointerdown", 10, 10, 2); // right-click
+    dispatchPointerEvent(window, "pointermove", 100, 100);
+    dispatchPointerEvent(window, "pointerup", 100, 100);
+
+    expect(block.style.left).toBe("5px");
+    expect(block.style.top).toBe("5px");
+  });
+
+  it("a pointermove with no drag in progress does nothing", () => {
+    const controller = makeController();
+    const segment = makeSegment({ id: "seg-1", visibility: "visible", x: 5, y: 5, width: 100, height: 30 });
+    mount(<DrawHarness controller={controller} initialSegments={[segment]} />);
+
+    dispatchPointerEvent(window, "pointermove", 500, 500);
+
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+    expect(block.style.left).toBe("5px");
+    expect(block.style.top).toBe("5px");
+  });
+
+  it("preserves the editor's DOM node identity (no remount/flicker) and its content across a drag", () => {
+    const controller = makeController();
+    const segment = makeSegment({
+      id: "seg-1",
+      visibility: "visible",
+      x: 50,
+      y: 50,
+      width: 100,
+      height: 30,
+      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }] },
+    });
+    mount(<DrawHarness controller={controller} initialSegments={[segment]} />);
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+    const proseBefore = container!.querySelector(".ProseMirror");
+    expect(proseBefore?.textContent).toBe("Hello");
+
+    dispatchPointerEvent(block, "pointerdown", 60, 60);
+    dispatchPointerEvent(window, "pointermove", 160, 160);
+    dispatchPointerEvent(window, "pointerup", 160, 160);
+
+    const proseAfter = container!.querySelector(".ProseMirror");
+    expect(proseAfter).toBe(proseBefore); // same DOM node reference -> the editor was never torn down and remounted
+    expect(proseAfter?.textContent).toBe("Hello"); // content byte-identical
+    expect(block.style.left).toBe("150px"); // 50 + (160 - 60)
+    expect(block.style.top).toBe("150px");
   });
 });

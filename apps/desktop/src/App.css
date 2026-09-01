@@ -378,7 +378,9 @@ button {
   padding: 4px 6px;
   border: 1px solid transparent;
   border-radius: 4px;
-  cursor: text;
+  /* The border/padding area is the drag handle (NTA-39) — "move" here,
+     overridden back to "text" over the actual editable content below. */
+  cursor: move;
 }
 
 /* Invisible by default (NTA-37) — border only on hover/while editing.
@@ -395,6 +397,7 @@ button {
 .segment-block .ProseMirror {
   outline: none;
   min-height: 1.4em;
+  cursor: text;
 }
 
 .app-shell--loading {
