@@ -51,6 +51,18 @@ function dispatchPointer(target: Element, type: "pointermove" | "pointerdown" | 
   });
 }
 
+/** Like `dispatchPointer`, but with real coordinates — NTA-39's drag/reposition gesture needs `clientX`/`clientY`. */
+function dispatchPointerAt(
+  target: EventTarget,
+  type: "pointermove" | "pointerdown" | "pointerup",
+  clientX: number,
+  clientY: number,
+): void {
+  act(() => {
+    target.dispatchEvent(new PointerEvent(type, { button: 0, pointerId: 1, clientX, clientY, bubbles: true }));
+  });
+}
+
 describe("SegmentLayerHost", () => {
   it("registers CREATE_VISIBLE_SEGMENT_COMMAND on mount, and running it arms + completes a visible-creation click", () => {
     const commandBus = makeFakeCommandBus();
@@ -90,5 +102,40 @@ describe("SegmentLayerHost", () => {
     mount(<SegmentLayerHost pageId="page-never-opened-before" commandBus={commandBus} />);
 
     expect(() => commandBus.run(CREATE_VISIBLE_SEGMENT_COMMAND)).not.toThrow();
+  });
+
+  it("dragging an existing segment (NTA-39) updates its x/y in the real store", () => {
+    const existing: SegmentBlock = {
+      id: "seg-1",
+      type: "segment",
+      visibility: "visible",
+      x: 10,
+      y: 10,
+      width: 100,
+      height: 30,
+      content: undefined,
+      zIndex: 0,
+    };
+    useNotePageStore.setState((state) => ({
+      pages: {
+        ...state.pages,
+        "page-groceries": { ...state.pages["page-groceries"], elements: [existing] },
+      },
+    }));
+    const commandBus = makeFakeCommandBus();
+    mount(
+      <CanvasViewport pageId="page-groceries">
+        <SegmentLayerHost pageId="page-groceries" commandBus={commandBus} />
+      </CanvasViewport>,
+    );
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+
+    dispatchPointerAt(block, "pointerdown", 20, 20); // grabs the border/padding (target === currentTarget)
+    dispatchPointerAt(window, "pointermove", 50, 40); // +30, +20
+    dispatchPointerAt(window, "pointerup", 50, 40);
+
+    const updated = useNotePageStore.getState().pages["page-groceries"].elements[0] as SegmentBlock;
+    expect(updated.x).toBe(40);
+    expect(updated.y).toBe(30);
   });
 });

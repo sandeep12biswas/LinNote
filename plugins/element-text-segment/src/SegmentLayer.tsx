@@ -21,7 +21,7 @@
 // if the shape changes — see CLAUDE.md's "Keep the data model in sync"
 // note.
 //
-// Three responsibilities:
+// Four responsibilities:
 // 1. Render every existing segment via @linnote/rich-text-engine's
 //    RichTextEngineProvider + EditorContent — border invisible by
 //    default (`visibility: "invisible"`), revealed on hover/focus via
@@ -50,15 +50,32 @@
 //    pointer is over the canvas) is the only coordinate source needed.
 //    `setPanSuppressed` (also host-supplied) stops CanvasViewport's own
 //    pan-drag from starting underneath this gesture's drag.
+// 4. Drag/reposition an existing segment (NTA-39): grabbing a segment's
+//    border/padding — not its text content, distinguished via
+//    `event.target === event.currentTarget` in `SegmentBlockView` below
+//    — starts a drag that updates its `x`/`y` live via `onMoveSegment`.
+//    Tracked the same window-scoped way as the other gestures, but
+//    computes canvas-space coordinates via the host-supplied
+//    `screenToCanvas` on every raw pointermove rather than reading the
+//    `pointerPosition` prop: that prop is updated by *another*
+//    component's (CanvasViewport's) React state for the very same
+//    pointermove event, and a same-event read of it here would have the
+//    same cross-component event-ordering risk `setPanSuppressed`'s own
+//    comment (NTA-38) already ran into — computing directly from the
+//    raw event sidesteps it entirely, matching how CanvasViewport's own
+//    pan-drag works. `key={segment.id}` below never changes across a
+//    move, and the position update only ever spreads `{...segment, x,
+//    y}` (leaving `content`'s object reference untouched) — so
+//    `RichTextEngineProvider`/TipTap never sees a changed `content` prop
+//    and never remounts/resets during a drag, satisfying the ticket's
+//    "byte-identical content, no flicker" requirement structurally
+//    rather than needing special-case code for it.
 //
-// TODO(NTA-39/40): drag/reposition an *existing* segment and real
-// auto-grow-height/manual-resize-width are separate subtasks of this
-// same story (NTA-32) — `width`/`height` are otherwise-placeholder
-// defaults (or the drawn rectangle's own size for NTA-38), not kept in
-// sync with rendered content size, and nothing here lets an existing
-// segment be dragged yet.
+// TODO(NTA-40): real auto-grow-height/manual-resize-width — `height` is
+// still an otherwise-placeholder default (or the drawn rectangle's own
+// size for NTA-38), not kept in sync with rendered content size.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   EditorContent,
   RichTextEngineProvider,
@@ -134,6 +151,10 @@ export interface SegmentLayerProps {
   onCreateSegment: (segment: SegmentBlockData) => void;
   /** Called whenever an existing segment's rich-text content changes. */
   onSegmentContentChange: (id: string, content: RichTextDoc) => void;
+  /** Called with an existing segment's new `x`/`y` (canvas-space) as it's dragged — see NTA-39 in this file's header comment. */
+  onMoveSegment: (id: string, x: number, y: number) => void;
+  /** Converts a pointer event's `clientX`/`clientY` (screen space) into canvas-space — see canvas-core's `useCanvasCoordinates()`. NTA-39's drag gesture needs this (not just `pointerPosition`) for the reason its own header-comment section explains. */
+  screenToCanvas: (clientX: number, clientY: number) => CanvasPoint;
   /**
    * Called once with a stable `armCreateVisible` function the host can
    * invoke (e.g. from a toolbar/menu command's handler,
@@ -152,6 +173,8 @@ export function SegmentLayer({
   pointerPosition,
   onCreateSegment,
   onSegmentContentChange,
+  onMoveSegment,
+  screenToCanvas,
   onCreateVisibleSegmentReady,
   setPanSuppressed,
 }: SegmentLayerProps) {
@@ -165,6 +188,10 @@ export function SegmentLayer({
   pointerPositionRef.current = pointerPosition;
   const onCreateSegmentRef = useRef(onCreateSegment);
   onCreateSegmentRef.current = onCreateSegment;
+  const onMoveSegmentRef = useRef(onMoveSegment);
+  onMoveSegmentRef.current = onMoveSegment;
+  const screenToCanvasRef = useRef(screenToCanvas);
+  screenToCanvasRef.current = screenToCanvas;
   const setPanSuppressedRef = useRef(setPanSuppressed);
   setPanSuppressedRef.current = setPanSuppressed;
 
@@ -284,6 +311,51 @@ export function SegmentLayer({
     };
   }, [drawArmed]);
 
+  // Drag/reposition an existing segment (NTA-39) — see this file's
+  // header comment for the full design. `draggingRef` (not state) since
+  // nothing here needs a re-render on drag start/end, only on each
+  // `onMoveSegment` call the host's own segments prop update already
+  // drives.
+  const draggingRef = useRef<{ id: string; startCanvas: CanvasPoint; startX: number; startY: number } | null>(null);
+
+  function handleDragHandleDown(segmentId: string, clientX: number, clientY: number) {
+    const segment = segmentsRef.current.find((candidate) => candidate.id === segmentId);
+    if (!segment) return;
+    draggingRef.current = {
+      id: segmentId,
+      startCanvas: screenToCanvasRef.current(clientX, clientY),
+      startX: segment.x,
+      startY: segment.y,
+    };
+    setPanSuppressedRef.current?.(true);
+  }
+
+  useEffect(() => {
+    function handlePointerMove(event: PointerEvent) {
+      const dragging = draggingRef.current;
+      if (!dragging) return;
+      const point = screenToCanvasRef.current(event.clientX, event.clientY);
+      onMoveSegmentRef.current(
+        dragging.id,
+        dragging.startX + (point.x - dragging.startCanvas.x),
+        dragging.startY + (point.y - dragging.startCanvas.y),
+      );
+    }
+
+    function handlePointerUp() {
+      if (!draggingRef.current) return;
+      draggingRef.current = null;
+      setPanSuppressedRef.current?.(false);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, []);
+
   return (
     <div className="segment-layer">
       {segments.map((segment) => (
@@ -294,6 +366,7 @@ export function SegmentLayer({
           firstChar={pendingFocus?.id === segment.id ? pendingFocus.firstChar : undefined}
           onAutoFocusHandled={() => setPendingFocus(null)}
           onContentChange={onSegmentContentChange}
+          onDragHandleDown={handleDragHandleDown}
         />
       ))}
     </div>
@@ -306,9 +379,35 @@ interface SegmentBlockViewProps {
   firstChar: string | undefined;
   onAutoFocusHandled: () => void;
   onContentChange: (id: string, content: RichTextDoc) => void;
+  /** Grabbing the border/padding (not the text content) starts a drag (NTA-39) — see the `handlePointerDown` below and this file's header comment. */
+  onDragHandleDown: (segmentId: string, clientX: number, clientY: number) => void;
 }
 
-function SegmentBlockView({ segment, autoFocus, firstChar, onAutoFocusHandled, onContentChange }: SegmentBlockViewProps) {
+function SegmentBlockView({
+  segment,
+  autoFocus,
+  firstChar,
+  onAutoFocusHandled,
+  onContentChange,
+  onDragHandleDown,
+}: SegmentBlockViewProps) {
+  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    // Always: stops a click/drag-to-edit inside a segment from bubbling
+    // up to CanvasViewport's own pointerdown handler, which would
+    // otherwise start a viewport pan drag instead of placing a text
+    // caret or (below) reposition-dragging this segment.
+    event.stopPropagation();
+    if (event.button !== 0) return;
+    // `currentTarget` is this wrapper div itself; `target` is whatever
+    // was actually under the pointer — the border/padding area hits the
+    // wrapper directly, while the text content hits a ProseMirror
+    // descendant. Only the former starts a drag; the latter is left
+    // alone to place a caret normally.
+    if (event.target !== event.currentTarget) return;
+    event.preventDefault(); // don't let the browser start its own native drag-selection gesture on the wrapper
+    onDragHandleDown(segment.id, event.clientX, event.clientY);
+  }
+
   return (
     <div
       className={`segment-block segment-block--${segment.visibility}`}
@@ -324,10 +423,7 @@ function SegmentBlockView({ segment, autoFocus, firstChar, onAutoFocusHandled, o
         minHeight: segment.height,
         zIndex: segment.zIndex,
       }}
-      // Stops a click/drag-to-edit inside a segment from bubbling up to
-      // CanvasViewport's own pointerdown handler, which would otherwise
-      // start a viewport pan drag instead of placing a text caret.
-      onPointerDown={(event) => event.stopPropagation()}
+      onPointerDown={handlePointerDown}
     >
       <RichTextEngineProvider content={segment.content} onChange={(doc) => onContentChange(segment.id, doc)}>
         <SegmentEditor autoFocus={autoFocus} firstChar={firstChar} onAutoFocusHandled={onAutoFocusHandled} />
