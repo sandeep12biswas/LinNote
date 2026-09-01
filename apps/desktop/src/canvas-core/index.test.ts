@@ -1,3 +1,4 @@
+import { suggestTextColor } from "@linnote/contrast-util";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CanvasElement, SegmentBlock } from "../types";
 import {
@@ -8,13 +9,14 @@ import {
   MAX_SCALE,
   MIN_SCALE,
   panViewport,
+  setBackgroundColorInPage,
   updateElementInPage,
   updateHeaderInPage,
   useNotePageStore,
   zoomViewport,
   type Viewport,
 } from "./index";
-import { createSeedNotePages } from "./mockData";
+import { createSeedNotePages, DEFAULT_BACKGROUND_COLOR } from "./mockData";
 
 function makeSegment(overrides: Partial<SegmentBlock> = {}): SegmentBlock {
   return {
@@ -106,6 +108,9 @@ describe("createBlankNotePage", () => {
     expect(page.id).toBe("page-new-123");
     expect(page.header).toEqual({ title: "Untitled Page", align: "left" });
     expect(page.background.kind).toBe("color");
+    expect(page.background.color).toBe(DEFAULT_BACKGROUND_COLOR);
+    // Computed live via contrast-util, not a hand-picked constant (NTA-35).
+    expect(page.background.suggestedTextColor).toBe(suggestTextColor(DEFAULT_BACKGROUND_COLOR));
     expect(page.elements).toEqual([]);
     expect(page.createdAt).toBe(page.updatedAt);
   });
@@ -176,6 +181,32 @@ describe("updateHeaderInPage", () => {
     expect(result.header).toEqual({ title: "New Title", align: "center" });
     expect(page.header).toEqual({ title: "Untitled Page", align: "left" }); // input untouched
     expect(result.updatedAt >= page.updatedAt).toBe(true);
+  });
+});
+
+describe("setBackgroundColorInPage", () => {
+  it("sets the background color, recomputes suggestedTextColor via contrast-util, and bumps updatedAt, without mutating the input page", () => {
+    const page = createBlankNotePage("page-1");
+
+    const result = setBackgroundColorInPage(page, "#000000");
+
+    expect(result.background.color).toBe("#000000");
+    expect(result.background.suggestedTextColor).toBe(suggestTextColor("#000000"));
+    expect(result.background.suggestedTextColor).toBe("#ffffff"); // sanity: white text on black
+    expect(page.background.color).toBe(DEFAULT_BACKGROUND_COLOR); // input untouched
+    expect(result.updatedAt >= page.updatedAt).toBe(true);
+  });
+
+  it("forces kind to \"color\" even if the page previously had a pattern background", () => {
+    const patterned: ReturnType<typeof createBlankNotePage> = {
+      ...createBlankNotePage("page-1"),
+      background: { kind: "pattern", pattern: "ruled", color: "#f7f5ef" },
+    };
+
+    const result = setBackgroundColorInPage(patterned, "#123456");
+
+    expect(result.background.kind).toBe("color");
+    expect(result.background.color).toBe("#123456");
   });
 });
 
@@ -257,5 +288,19 @@ describe("useNotePageStore", () => {
     useNotePageStore.getState().updateHeader("page-never-opened", (header) => ({ ...header, align: "right" }));
 
     expect(useNotePageStore.getState().pages["page-never-opened"].header.align).toBe("right");
+  });
+
+  it("setBackgroundColor sets the color and recomputed suggestion on an already-open page", () => {
+    useNotePageStore.getState().setBackgroundColor("page-groceries", "#000000");
+
+    const background = useNotePageStore.getState().pages["page-groceries"].background;
+    expect(background.color).toBe("#000000");
+    expect(background.suggestedTextColor).toBe(suggestTextColor("#000000"));
+  });
+
+  it("setBackgroundColor get-or-creates a page that hasn't been opened yet, rather than throwing", () => {
+    useNotePageStore.getState().setBackgroundColor("page-never-opened", "#123456");
+
+    expect(useNotePageStore.getState().pages["page-never-opened"].background.color).toBe("#123456");
   });
 });

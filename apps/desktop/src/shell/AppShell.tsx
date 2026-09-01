@@ -46,9 +46,13 @@
 // NTA-34 mounts `PageHeader` (../canvas-core/PageHeader.tsx) as
 // `CanvasViewport`'s `header` prop — title/date/alignment, fixed on
 // screen outside the pan/zoom transform.
+//
+// NTA-35 mounts `BackgroundPicker` (../canvas-core/BackgroundPicker.tsx)
+// alongside `PageHeader` in that same `header` slot — the page
+// background color picker + auto-contrast suggestion.
 
 import { useState } from "react";
-import { CanvasViewport, PageHeader, SegmentLayerHost } from "../canvas-core";
+import { BackgroundPicker, CanvasViewport, PageHeader, SegmentLayerHost } from "../canvas-core";
 import { useNavigationStore } from "../store";
 import { buildMenuBar, buildToolbar } from "./index";
 import { MenuBar } from "./MenuBar";
@@ -94,7 +98,15 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
         <section className="app-shell__pane app-shell__pane--editor-canvas" aria-label="Editor Canvas">
           <BreadcrumbTrail />
           {activePageId ? (
-            <CanvasViewport pageId={activePageId} header={<PageHeader pageId={activePageId} />}>
+            <CanvasViewport
+              pageId={activePageId}
+              header={
+                <>
+                  <PageHeader pageId={activePageId} />
+                  <BackgroundPicker pageId={activePageId} />
+                </>
+              }
+            >
               <SegmentLayerHost pageId={activePageId} />
             </CanvasViewport>
           ) : (
