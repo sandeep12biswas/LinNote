@@ -37,9 +37,14 @@
 // pane once a page is open (`useNavigationStore`'s `activePageId`),
 // replacing the static placeholder that was there since NTA-13; falls
 // back to the placeholder when no page is open.
+//
+// NTA-37 mounts `SegmentLayerHost` (../canvas-core/SegmentLayerHost.tsx)
+// as `CanvasViewport`'s `children` — the segment-block renderer and
+// invisible create-on-type gesture, panning/scaling with the page's
+// other content.
 
 import { useState } from "react";
-import { CanvasViewport } from "../canvas-core";
+import { CanvasViewport, SegmentLayerHost } from "../canvas-core";
 import { useNavigationStore } from "../store";
 import { buildMenuBar, buildToolbar } from "./index";
 import { MenuBar } from "./MenuBar";
@@ -85,7 +90,9 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
         <section className="app-shell__pane app-shell__pane--editor-canvas" aria-label="Editor Canvas">
           <BreadcrumbTrail />
           {activePageId ? (
-            <CanvasViewport pageId={activePageId} />
+            <CanvasViewport pageId={activePageId}>
+              <SegmentLayerHost pageId={activePageId} />
+            </CanvasViewport>
           ) : (
             <h2 className="app-shell__pane-label">Editor Canvas</h2>
           )}

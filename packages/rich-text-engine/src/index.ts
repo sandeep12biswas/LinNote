@@ -19,6 +19,12 @@
 
 export type { Editor as TipTapEditor } from "@tiptap/core";
 
+// Re-exported so a segment renderer (plugins/element-text-segment) can
+// mount the shared editor's DOM node without adding its own raw
+// `@tiptap/react` dependency — this package stays the one place that
+// knows about TipTap, per this file's own header comment.
+export { EditorContent } from "@tiptap/react";
+
 export {
   createBaseExtensions,
   createRichTextEditor,

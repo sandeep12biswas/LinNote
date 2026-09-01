@@ -270,6 +270,45 @@ button {
   transform-origin: 0 0;
 }
 
+/* ---- Segment blocks (NTA-37) ----
+   `.segment-layer` itself has no explicit size (content-sized like its
+   `.canvas-viewport__transform` parent), so empty canvas space simply
+   falls through to it for pointer-drag panning — only an actual
+   `.segment-block` needs to opt out of that, via its own
+   onPointerDown/stopPropagation (SegmentLayer.tsx). */
+
+.segment-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.segment-block {
+  position: absolute;
+  min-width: 40px;
+  min-height: 1.6em;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: text;
+}
+
+/* Invisible by default (NTA-37) — border only on hover/while editing.
+   `--visible` (NTA-38's deliberate creation) always shows it. */
+.segment-block--invisible:hover,
+.segment-block--invisible:focus-within {
+  border-color: rgba(15, 15, 15, 0.35);
+}
+
+.segment-block--visible {
+  border-color: rgba(15, 15, 15, 0.35);
+}
+
+.segment-block .ProseMirror {
+  outline: none;
+  min-height: 1.4em;
+}
+
 .app-shell--loading {
   display: flex;
   align-items: center;

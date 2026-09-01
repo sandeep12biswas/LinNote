@@ -1,16 +1,34 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import type { CanvasElement, SegmentBlock } from "../types";
 import {
+  addElementToPage,
   createBlankNotePage,
   DEFAULT_VIEWPORT,
   getOrCreatePage,
   MAX_SCALE,
   MIN_SCALE,
   panViewport,
+  updateElementInPage,
   useNotePageStore,
   zoomViewport,
   type Viewport,
 } from "./index";
 import { createSeedNotePages } from "./mockData";
+
+function makeSegment(overrides: Partial<SegmentBlock> = {}): SegmentBlock {
+  return {
+    id: "segment-1",
+    type: "segment",
+    visibility: "invisible",
+    x: 0,
+    y: 0,
+    width: 240,
+    height: 32,
+    content: undefined,
+    zIndex: 0,
+    ...overrides,
+  };
+}
 
 describe("panViewport", () => {
   it("translates x/y by the drag delta, leaving scale untouched", () => {
@@ -114,6 +132,40 @@ describe("getOrCreatePage", () => {
   });
 });
 
+describe("addElementToPage", () => {
+  it("appends the element and bumps updatedAt, without mutating the input page", () => {
+    const page = createBlankNotePage("page-1");
+    const segment = makeSegment();
+
+    const result = addElementToPage(page, segment);
+
+    expect(result.elements).toEqual([segment]);
+    expect(page.elements).toEqual([]); // input untouched
+    expect(result.updatedAt >= page.updatedAt).toBe(true);
+  });
+});
+
+describe("updateElementInPage", () => {
+  it("replaces the matching element via updater, without mutating the input page", () => {
+    const segment = makeSegment();
+    const page = addElementToPage(createBlankNotePage("page-1"), segment);
+    const newContent = { type: "doc", content: [] };
+
+    const result = updateElementInPage(page, segment.id, (element) => ({ ...element, content: newContent }));
+
+    expect((result.elements[0] as SegmentBlock).content).toEqual(newContent);
+    expect((page.elements[0] as SegmentBlock).content).toBeUndefined(); // input untouched
+  });
+
+  it("is a no-op (same page reference) when no element matches the id", () => {
+    const page = addElementToPage(createBlankNotePage("page-1"), makeSegment());
+
+    const result = updateElementInPage(page, "no-such-id", (element) => element);
+
+    expect(result).toBe(page);
+  });
+});
+
 describe("useNotePageStore", () => {
   beforeEach(() => {
     useNotePageStore.setState({ pages: createSeedNotePages() });
@@ -145,5 +197,40 @@ describe("useNotePageStore", () => {
     const returned = ensurePage("page-groceries");
 
     expect(returned).toBe(before);
+  });
+
+  it("addElement appends onto an already-open page", () => {
+    const segment = makeSegment();
+
+    useNotePageStore.getState().addElement("page-groceries", segment);
+
+    expect(useNotePageStore.getState().pages["page-groceries"].elements).toEqual([segment]);
+  });
+
+  it("addElement get-or-creates a page that hasn't been opened yet, rather than throwing", () => {
+    const segment = makeSegment();
+
+    useNotePageStore.getState().addElement("page-never-opened", segment);
+
+    expect(useNotePageStore.getState().pages["page-never-opened"].elements).toEqual([segment]);
+  });
+
+  it("updateElement replaces a matching element on an open page", () => {
+    const segment = makeSegment();
+    useNotePageStore.getState().addElement("page-groceries", segment);
+
+    useNotePageStore
+      .getState()
+      .updateElement("page-groceries", segment.id, (element) => ({ ...element, x: 42 } as CanvasElement));
+
+    expect((useNotePageStore.getState().pages["page-groceries"].elements[0] as SegmentBlock).x).toBe(42);
+  });
+
+  it("updateElement no-ops for a page id that doesn't exist yet", () => {
+    const before = useNotePageStore.getState().pages;
+
+    useNotePageStore.getState().updateElement("page-never-opened", "some-id", (element) => element);
+
+    expect(useNotePageStore.getState().pages).toBe(before);
   });
 });

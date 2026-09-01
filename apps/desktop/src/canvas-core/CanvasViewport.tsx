@@ -13,11 +13,22 @@
 //   - `children` — rendered *inside* the transformed layer, e.g.
 //     NTA-37+'s segment blocks and other `CanvasElement` renderers: they
 //     should scale/pan together with the page content.
-// Neither slot is populated yet — this ticket is purely the coordinate-
-// space plumbing (docs/architecture.md §5) other editor subtasks build on.
+//
+// NTA-37 populates `children` for the first time (segment blocks, via
+// ../canvas-core/SegmentLayerHost.tsx mounted from ../shell/AppShell.tsx)
+// and needs to convert a pointer event's screen position into canvas-space
+// coordinates — e.g. to place a newly-typed segment "where the cursor is".
+// `CanvasCoordinatesContext`/`useCanvasCoordinates()` below expose exactly
+// that (plus the pointer's live canvas-space position) to anything mounted
+// as `children`, without changing the `children: ReactNode` contract
+// itself or requiring a second render-prop-shaped API.
 
 import {
+  createContext,
+  useCallback,
+  useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -35,6 +46,38 @@ export interface CanvasViewportProps {
   header?: ReactNode;
   /** Rendered inside the pan/zoom-transformed layer, alongside the page's own content — pans/scales together with it. Reserved for NTA-37+'s segment blocks and other `CanvasElement` renderers. */
   children?: ReactNode;
+}
+
+/** A point in canvas-space — the same coordinate space `SegmentBlock.x`/`y` (../types) are stored in. */
+export interface CanvasPoint {
+  x: number;
+  y: number;
+}
+
+export interface CanvasCoordinates {
+  /** Converts a pointer event's `clientX`/`clientY` (screen space) into canvas-space, undoing the current pan/zoom transform. */
+  screenToCanvas: (clientX: number, clientY: number) => CanvasPoint;
+  /**
+   * The pointer's last known position over the canvas surface, already
+   * converted to canvas-space — `null` once the pointer has left it. Lets
+   * a `children` consumer (e.g. NTA-37's create-on-type gesture) know
+   * "where the user is looking" without its own window-wide pointermove
+   * listener; updated on every pointermove regardless of whether a pan
+   * drag is in progress. Cheap enough at today's scale — Phase 9/NTA-75
+   * (RAF batching) is the place to revisit this if it ever shows up as a
+   * bottleneck.
+   */
+  pointerPosition: CanvasPoint | null;
+}
+
+const CanvasCoordinatesContext = createContext<CanvasCoordinates>({
+  screenToCanvas: (x, y) => ({ x, y }),
+  pointerPosition: null,
+});
+
+/** Read by anything mounted as `CanvasViewport`'s `children` — see this file's header comment. */
+export function useCanvasCoordinates(): CanvasCoordinates {
+  return useContext(CanvasCoordinatesContext);
 }
 
 /** Wheel-delta-to-zoom-factor sensitivity — tuned so a normal mouse-wheel notch feels like a small, controllable zoom step, not a jump. */
@@ -65,6 +108,32 @@ export function CanvasViewport({ pageId, header, children }: CanvasViewportProps
   const surfaceRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ pointerId: number; lastX: number; lastY: number } | null>(null);
 
+  // Screen -> canvas-space conversion for the *current* viewport. The
+  // render surface applies `translate(x, y) scale(scale)` with
+  // `transform-origin: 0 0` (../App.css), so a point's screen position is
+  // `surfaceOrigin + viewport.xy + canvasPoint * viewport.scale`; solving
+  // for `canvasPoint` gives the inverse below. Recomputed (cheaply — no
+  // DOM measurement beyond one `getBoundingClientRect()`) whenever
+  // `viewport` changes, exposed to `children` via context rather than
+  // baked into a single one-off calculation, since a create-on-type
+  // gesture needs it live as the user pans/zooms with the pointer still.
+  const screenToCanvas = useCallback(
+    (clientX: number, clientY: number): CanvasPoint => {
+      const bounds = surfaceRef.current?.getBoundingClientRect();
+      const originX = (bounds?.left ?? 0) + viewport.x;
+      const originY = (bounds?.top ?? 0) + viewport.y;
+      return { x: (clientX - originX) / viewport.scale, y: (clientY - originY) / viewport.scale };
+    },
+    [viewport],
+  );
+
+  const [pointerPosition, setPointerPosition] = useState<CanvasPoint | null>(null);
+
+  const coordinates = useMemo<CanvasCoordinates>(
+    () => ({ screenToCanvas, pointerPosition }),
+    [screenToCanvas, pointerPosition],
+  );
+
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     // Primary button/contact only (mouse left-click, single touch/pen point).
     if (event.button !== 0) return;
@@ -73,6 +142,12 @@ export function CanvasViewport({ pageId, header, children }: CanvasViewportProps
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    // Tracked unconditionally (not just while panning) — this is the one
+    // place a screen pointermove over the whole surface is already
+    // observed, so `children` (via useCanvasCoordinates()) get it for
+    // free instead of adding their own window-wide listener.
+    setPointerPosition(screenToCanvas(event.clientX, event.clientY));
+
     const drag = dragState.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const dx = event.clientX - drag.lastX;
@@ -80,6 +155,10 @@ export function CanvasViewport({ pageId, header, children }: CanvasViewportProps
     drag.lastX = event.clientX;
     drag.lastY = event.clientY;
     setViewport((current) => panViewport(current, dx, dy));
+  }
+
+  function handlePointerLeave() {
+    setPointerPosition(null);
   }
 
   function endDrag(event: ReactPointerEvent<HTMLDivElement>) {
@@ -113,6 +192,7 @@ export function CanvasViewport({ pageId, header, children }: CanvasViewportProps
       onPointerMove={handlePointerMove}
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
+      onPointerLeave={handlePointerLeave}
       onWheel={handleWheel}
     >
       {header}
@@ -120,7 +200,7 @@ export function CanvasViewport({ pageId, header, children }: CanvasViewportProps
         className="canvas-viewport__transform"
         style={{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})` }}
       >
-        {children}
+        <CanvasCoordinatesContext.Provider value={coordinates}>{children}</CanvasCoordinatesContext.Provider>
       </div>
     </div>
   );
