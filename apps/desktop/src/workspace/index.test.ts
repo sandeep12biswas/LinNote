@@ -1,15 +1,26 @@
+import { generateKeyBetween } from "fractional-indexing";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { WorkspaceNode } from "../types";
 import {
+  TRASH_RETENTION_DAYS,
   createNode,
   deleteNode,
+  emptyTrash,
+  getAncestorChain,
   getChildren,
   getDescendantIds,
   getNode,
   getRootNodes,
+  getTrashedNodes,
   isSelfOrDescendant,
   moveNode,
+  needsRebalance,
+  purgeExpiredTrash,
+  purgeNode,
+  REBALANCE_KEY_LENGTH_THRESHOLD,
+  rebalanceSiblings,
   renameNode,
+  restoreNode,
   useWorkspaceTreeStore,
 } from "./index";
 import { createSeedWorkspaceNodes } from "./mockData";
@@ -80,6 +91,27 @@ describe("getNode / getDescendantIds / isSelfOrDescendant", () => {
     expect(isSelfOrDescendant(nodes, "root", "grandchild")).toBe(true);
     expect(isSelfOrDescendant(nodes, "root", "sibling")).toBe(true);
     expect(isSelfOrDescendant(nodes, "child", "sibling")).toBe(false);
+  });
+});
+
+describe("getAncestorChain", () => {
+  const nodes = [
+    makeNode({ id: "notebook", parentId: null, type: "notebook", order: "a0" }),
+    makeNode({ id: "folder", parentId: "notebook", type: "folder", order: "a0" }),
+    makeNode({ id: "page", parentId: "folder", type: "page", order: "a0" }),
+    makeNode({ id: "subpage", parentId: "page", type: "page", order: "a0" }),
+  ];
+
+  it("returns the chain from the root notebook down to the node itself, inclusive", () => {
+    expect(getAncestorChain(nodes, "subpage").map((n) => n.id)).toEqual(["notebook", "folder", "page", "subpage"]);
+  });
+
+  it("returns just the node itself for a root-level notebook", () => {
+    expect(getAncestorChain(nodes, "notebook").map((n) => n.id)).toEqual(["notebook"]);
+  });
+
+  it("returns an empty array for an unknown id", () => {
+    expect(getAncestorChain(nodes, "missing")).toEqual([]);
   });
 });
 
@@ -169,6 +201,108 @@ describe("moveNode", () => {
 
     expect(getChildren(next, "root").map((n) => n.id)).toEqual(["first", "target", "second"]);
   });
+
+  it("reorders within the same parent — dragging the last sibling to the front", () => {
+    const nodes = [
+      makeNode({ id: "a", parentId: "root", type: "folder", order: "a0" }),
+      makeNode({ id: "b", parentId: "root", type: "folder", order: "a1" }),
+      makeNode({ id: "c", parentId: "root", type: "folder", order: "a2" }),
+    ];
+
+    const next = moveNode(nodes, "c", "root", { beforeSiblingId: "a" });
+
+    expect(getChildren(next, "root").map((n) => n.id)).toEqual(["c", "a", "b"]);
+    // Only the moved node's parentId/order/updatedAt change.
+    expect(getNode(next, "a")).toEqual(getNode(nodes, "a"));
+    expect(getNode(next, "b")).toEqual(getNode(nodes, "b"));
+  });
+
+  it("reorders within the same parent — dragging a middle sibling to between two others", () => {
+    const nodes = [
+      makeNode({ id: "a", parentId: "root", type: "folder", order: "a0" }),
+      makeNode({ id: "b", parentId: "root", type: "folder", order: "a1" }),
+      makeNode({ id: "c", parentId: "root", type: "folder", order: "a2" }),
+      makeNode({ id: "d", parentId: "root", type: "folder", order: "a3" }),
+    ];
+
+    // Move "d" to sit between "a" and "b" (i.e. before "b").
+    const next = moveNode(nodes, "d", "root", { beforeSiblingId: "b" });
+
+    expect(getChildren(next, "root").map((n) => n.id)).toEqual(["a", "d", "b", "c"]);
+  });
+
+  it("dropping with no beforeSiblingId among current siblings appends to the end (drop-after-last)", () => {
+    const nodes = [
+      makeNode({ id: "a", parentId: "root", type: "folder", order: "a0" }),
+      makeNode({ id: "b", parentId: "root", type: "folder", order: "a1" }),
+    ];
+
+    const next = moveNode(nodes, "a", "root", {});
+
+    expect(getChildren(next, "root").map((n) => n.id)).toEqual(["b", "a"]);
+  });
+});
+
+describe("needsRebalance / rebalanceSiblings", () => {
+  it("needsRebalance is false for ordinary short keys, true past the threshold", () => {
+    expect(needsRebalance("a0")).toBe(false);
+    expect(needsRebalance("a".repeat(REBALANCE_KEY_LENGTH_THRESHOLD))).toBe(false);
+    expect(needsRebalance("a".repeat(REBALANCE_KEY_LENGTH_THRESHOLD + 1))).toBe(true);
+  });
+
+  it("rebalanceSiblings regenerates every direct child's order, preserving relative order", () => {
+    const nodes = [
+      makeNode({ id: "notebook", parentId: null, type: "notebook", order: "a0" }),
+      makeNode({ id: "b", parentId: "notebook", type: "folder", order: "z9999" }),
+      makeNode({ id: "a", parentId: "notebook", type: "folder", order: "a0000001" }),
+      makeNode({ id: "c", parentId: "notebook", type: "folder", order: "z99991" }),
+      // A grandchild under a different parent must be untouched.
+      makeNode({ id: "grandchild", parentId: "a", type: "folder", order: "a0" }),
+    ];
+
+    const next = rebalanceSiblings(nodes, "notebook");
+
+    // Same order (sorted by the *old* keys) is preserved with fresh, short keys.
+    expect(getChildren(next, "notebook").map((n) => n.id)).toEqual(["a", "b", "c"]);
+    for (const id of ["a", "b", "c"]) {
+      expect(needsRebalance(getNode(next, id)?.order as string)).toBe(false);
+    }
+    // Untouched siblings elsewhere in the tree keep their own order.
+    expect(getNode(next, "grandchild")?.order).toBe("a0");
+  });
+
+  it("rebalanceSiblings on an empty parent is a no-op", () => {
+    const nodes = [makeNode({ id: "notebook", parentId: null, type: "notebook", order: "a0" })];
+    expect(rebalanceSiblings(nodes, "notebook")).toEqual(nodes);
+  });
+
+  it("moveNode automatically rebalances once the naive generated key would grow past the threshold", () => {
+    // Manually squeeze two bounds together (mirrors what many same-gap
+    // drag-reorders do over time) until the *next* key generated between
+    // them would exceed REBALANCE_KEY_LENGTH_THRESHOLD.
+    let upper = "a1";
+    let candidate = generateKeyBetween("a0", upper);
+    while (candidate.length <= REBALANCE_KEY_LENGTH_THRESHOLD) {
+      upper = candidate;
+      candidate = generateKeyBetween("a0", upper);
+    }
+
+    const nodes = [
+      makeNode({ id: "a", parentId: "root", type: "folder", order: "a0" }),
+      makeNode({ id: "b", parentId: "root", type: "folder", order: upper }),
+      makeNode({ id: "c", parentId: "root", type: "folder", order: "a2" }),
+    ];
+
+    // Insert "c" between "a" and the squeezed "b": the naive key would
+    // cross the threshold, so this should trigger an automatic rebalance
+    // of every sibling under "root" rather than growing further.
+    const next = moveNode(nodes, "c", "root", { beforeSiblingId: "b" });
+
+    expect(getChildren(next, "root").map((n) => n.id)).toEqual(["a", "c", "b"]);
+    for (const node of getChildren(next, "root")) {
+      expect(needsRebalance(node.order)).toBe(false);
+    }
+  });
 });
 
 describe("deleteNode", () => {
@@ -187,6 +321,185 @@ describe("deleteNode", () => {
     expect(getNode(next, "sibling")?.trashedAt).toBeNull();
     // Trashed nodes vanish from default (non-includeTrashed) listings.
     expect(getChildren(next, "root").map((n) => n.id)).toEqual(["sibling"]);
+  });
+});
+
+describe("getTrashedNodes", () => {
+  const nodes = [
+    makeNode({ id: "notebook", parentId: null, type: "notebook", order: "a0", title: "Notebook" }),
+    makeNode({
+      id: "folder",
+      parentId: "notebook",
+      type: "folder",
+      order: "a0",
+      title: "Folder",
+      trashedAt: "2026-01-01T00:00:00.000Z",
+    }),
+    makeNode({
+      id: "page",
+      parentId: "folder",
+      type: "page",
+      order: "a0",
+      title: "Page",
+      trashedAt: "2026-01-01T00:00:00.000Z",
+    }),
+    makeNode({
+      id: "standalone",
+      parentId: "notebook",
+      type: "folder",
+      order: "a1",
+      title: "Standalone",
+      trashedAt: "2026-01-03T00:00:00.000Z",
+    }),
+  ];
+
+  it("returns only trash roots — trashed nodes whose parent isn't itself trashed — newest first", () => {
+    expect(getTrashedNodes(nodes).map((n) => n.id)).toEqual(["standalone", "folder"]);
+  });
+});
+
+describe("restoreNode", () => {
+  const nodes = [
+    makeNode({ id: "notebook", parentId: null, type: "notebook", order: "a0" }),
+    makeNode({
+      id: "folder",
+      parentId: "notebook",
+      type: "folder",
+      order: "a0",
+      trashedAt: "2026-01-01T00:00:00.000Z",
+    }),
+    makeNode({
+      id: "page",
+      parentId: "folder",
+      type: "page",
+      order: "a0",
+      trashedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  ];
+
+  it("clears trashedAt on the node and cascades the restore to every descendant", () => {
+    const next = restoreNode(nodes, "folder");
+    expect(getNode(next, "folder")?.trashedAt).toBeNull();
+    expect(getNode(next, "page")?.trashedAt).toBeNull();
+  });
+
+  it("is a no-op when the node isn't currently trashed", () => {
+    expect(restoreNode(nodes, "notebook")).toBe(nodes);
+  });
+});
+
+describe("purgeNode", () => {
+  const nodes = [
+    makeNode({ id: "notebook", parentId: null, type: "notebook", order: "a0" }),
+    makeNode({
+      id: "folder",
+      parentId: "notebook",
+      type: "folder",
+      order: "a0",
+      trashedAt: "2026-01-01T00:00:00.000Z",
+    }),
+    makeNode({
+      id: "page",
+      parentId: "folder",
+      type: "page",
+      order: "a0",
+      trashedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  ];
+
+  it("permanently removes the node and its descendants", () => {
+    const next = purgeNode(nodes, "folder");
+    expect(getNode(next, "folder")).toBeUndefined();
+    expect(getNode(next, "page")).toBeUndefined();
+    expect(getNode(next, "notebook")).toBeDefined();
+  });
+
+  it("refuses to purge a node that isn't trashed", () => {
+    expect(() => purgeNode(nodes, "notebook")).toThrow(/not in the trash/i);
+  });
+
+  it("throws for an unknown id", () => {
+    expect(() => purgeNode(nodes, "missing")).toThrow(/unknown node id/i);
+  });
+});
+
+describe("emptyTrash", () => {
+  it("removes every currently-trashed node, roots and cascaded descendants alike", () => {
+    const nodes = [
+      makeNode({ id: "notebook", parentId: null, type: "notebook", order: "a0" }),
+      makeNode({
+        id: "folder",
+        parentId: "notebook",
+        type: "folder",
+        order: "a0",
+        trashedAt: "2026-01-01T00:00:00.000Z",
+      }),
+      makeNode({
+        id: "page",
+        parentId: "folder",
+        type: "page",
+        order: "a0",
+        trashedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ];
+
+    const next = emptyTrash(nodes);
+    expect(next.map((n) => n.id)).toEqual(["notebook"]);
+  });
+});
+
+describe("purgeExpiredTrash", () => {
+  const now = new Date("2026-03-01T00:00:00.000Z");
+
+  it(`purges a trash root older than ${TRASH_RETENTION_DAYS} days, along with its descendants`, () => {
+    const nodes = [
+      makeNode({ id: "notebook", parentId: null, type: "notebook", order: "a0" }),
+      makeNode({
+        id: "old-folder",
+        parentId: "notebook",
+        type: "folder",
+        order: "a0",
+        trashedAt: "2026-01-01T00:00:00.000Z", // well past 30 days before `now`
+      }),
+      makeNode({
+        id: "old-page",
+        parentId: "old-folder",
+        type: "page",
+        order: "a0",
+        trashedAt: "2026-01-01T00:00:00.000Z",
+      }),
+      makeNode({
+        id: "recent-folder",
+        parentId: "notebook",
+        type: "folder",
+        order: "a1",
+        trashedAt: "2026-02-28T00:00:00.000Z", // within 30 days of `now`
+      }),
+    ];
+
+    const next = purgeExpiredTrash(nodes, { now });
+    expect(next.map((n) => n.id)).toEqual(["notebook", "recent-folder"]);
+  });
+
+  it("respects a custom retentionDays", () => {
+    const nodes = [
+      makeNode({ id: "notebook", parentId: null, type: "notebook", order: "a0" }),
+      makeNode({
+        id: "folder",
+        parentId: "notebook",
+        type: "folder",
+        order: "a0",
+        trashedAt: "2026-02-27T00:00:00.000Z",
+      }),
+    ];
+
+    expect(purgeExpiredTrash(nodes, { now, retentionDays: 1 }).map((n) => n.id)).toEqual(["notebook"]);
+    expect(purgeExpiredTrash(nodes, { now, retentionDays: 30 }).map((n) => n.id)).toEqual(["notebook", "folder"]);
+  });
+
+  it("is a no-op when nothing is trashed or expired", () => {
+    const nodes = [makeNode({ id: "notebook", parentId: null, type: "notebook", order: "a0" })];
+    expect(purgeExpiredTrash(nodes, { now })).toBe(nodes);
   });
 });
 
@@ -215,5 +528,45 @@ describe("useWorkspaceTreeStore", () => {
 
     remove(created.id);
     expect(getNode(useWorkspaceTreeStore.getState().nodes, created.id)?.trashedAt).not.toBeNull();
+  });
+
+  it("restoreNode/purgeNode/emptyTrash mutate the store's nodes array", () => {
+    const {
+      createNode: create,
+      deleteNode: remove,
+      restoreNode: restore,
+      purgeNode: purge,
+      emptyTrash: empty,
+    } = useWorkspaceTreeStore.getState();
+
+    const a = create({ parentId: "notebook-1", type: "folder", title: "A" });
+    remove(a.id);
+    expect(getNode(useWorkspaceTreeStore.getState().nodes, a.id)?.trashedAt).not.toBeNull();
+
+    restore(a.id);
+    expect(getNode(useWorkspaceTreeStore.getState().nodes, a.id)?.trashedAt).toBeNull();
+
+    remove(a.id);
+    purge(a.id);
+    expect(getNode(useWorkspaceTreeStore.getState().nodes, a.id)).toBeUndefined();
+
+    const b = create({ parentId: "notebook-1", type: "folder", title: "B" });
+    remove(b.id);
+    empty();
+    expect(getNode(useWorkspaceTreeStore.getState().nodes, b.id)).toBeUndefined();
+  });
+
+  it("sweepExpiredTrash purges trash roots older than retentionDays", () => {
+    const { createNode: create, deleteNode: remove, sweepExpiredTrash: sweep } = useWorkspaceTreeStore.getState();
+
+    const created = create({ parentId: "notebook-1", type: "folder", title: "Old" });
+    remove(created.id);
+
+    const farFuture = new Date(
+      new Date(getNode(useWorkspaceTreeStore.getState().nodes, created.id)!.trashedAt as string).getTime() +
+        31 * 24 * 60 * 60 * 1000,
+    );
+    sweep({ now: farFuture });
+    expect(getNode(useWorkspaceTreeStore.getState().nodes, created.id)).toBeUndefined();
   });
 });

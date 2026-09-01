@@ -6,11 +6,12 @@ Check items off here as you close them in Jira — this file and Jira should
 never drift for long; if they do, Jira is the source of truth and this file
 gets corrected.
 
-Built by cross-referencing three things as of **2026-08-30**: the Notion
-"Desing architecture" (v2.2) and "Plugins" (v1.1) pages, the actual code in
-this repo (`plugins/*`, `apps/desktop/src/*`), and every issue in Jira
-project NTA (NTA-1…NTA-84). See `docs/plan.md` for the narrative gap-analysis
-this list was generated from.
+Built by cross-referencing three things as of **2026-08-30**, last updated
+**2026-09-01** (Phase 2 completion): the Notion "Desing architecture" (v2.2)
+and "Plugins" (v1.1) pages, the actual code in this repo (`plugins/*`,
+`apps/desktop/src/*`), and every issue in Jira project NTA (NTA-1…NTA-84).
+See `docs/plan.md` for the narrative gap-analysis this list was generated
+from.
 
 Legend: `[x]` done and verified in code · `[ ]` not started · 🟡 story
 partially done (see its subtask checkboxes).
@@ -23,10 +24,14 @@ partially done (see its subtask checkboxes).
 2. **Finish plugin activation wiring** next: cheap (no-op stub commands, ~a
    day each), already 2/15 done, and gives every later phase a visible
    menu/toolbar hook to attach real logic to instead of wiring UI plumbing
-   and feature logic at the same time.
+   and feature logic at the same time. *(In practice this got deferred:
+   NTA-49/50/51 landed first, and once Phase 2 was partway in-flight it made
+   more sense to finish that story than context-switch back to these stub
+   activations — they're still open, see the Cross-cutting section below.)*
 3. **Phase 2 (Workspace hierarchy)** before the canvas: without a real
    `WorkspaceNode` tree there's no way to open a real page, so Phase 3/4 work
-   would be testable only against a hardcoded stub page.
+   would be testable only against a hardcoded stub page. **Done as of
+   2026-09-01** — see below.
 4. **Phase 3 → 4 → 6** (canvas → rich text/segments → collision) in one story
    (NTA-32) because each builds directly on the previous one's data model.
 5. **Phase 5 (remaining formatting plugins)** right after, while the
@@ -87,21 +92,21 @@ one phase below.
   - [ ] [NTA-30](https://sandeep12biswas.atlassian.net/browse/NTA-30) core.sync.onedrive
   - [ ] [NTA-31](https://sandeep12biswas.atlassian.net/browse/NTA-31) core.sync.google-drive
 
-## Phase 2 — Workspace hierarchy 🟡 IN PROGRESS
+## Phase 2 — Workspace hierarchy ✅ DONE
 
 `WorkspaceNode` tree, Folder Tree + Page List panes wired to real data,
 create/rename/move/delete, fractional-index ordering, trash. Blocks every
 later phase from testing against a real notebook instead of a hardcoded page.
 
-- [ ] [NTA-43](https://sandeep12biswas.atlassian.net/browse/NTA-43) — Phase 2: Workspace hierarchy 🟡 (3/8 subtasks done, on `feature/nta-49-51-workspace-hierarchy` — not yet merged to develop)
+- [x] [NTA-43](https://sandeep12biswas.atlassian.net/browse/NTA-43) — Phase 2: Workspace hierarchy — all 8 subtasks merged into `feature/module-build` (2026-09-01); Jira status still shows In Progress on NTA-52…56, left as-is per instruction — code is done and verified (173 desktop tests passing), not yet reconciled with Jira
   - [x] [NTA-49](https://sandeep12biswas.atlassian.net/browse/NTA-49) WorkspaceNode tree data model + id-based flat storage
   - [x] [NTA-50](https://sandeep12biswas.atlassian.net/browse/NTA-50) Folder Tree pane: render folder/notebook nodes, expand/collapse, drag-to-reparent
   - [x] [NTA-51](https://sandeep12biswas.atlassian.net/browse/NTA-51) Page List pane: list pages for selected folder, nested subpages, highlight open page
-  - [ ] [NTA-52](https://sandeep12biswas.atlassian.net/browse/NTA-52) Structural undo stack: Move/Rename/Delete/Create commands
-  - [ ] [NTA-53](https://sandeep12biswas.atlassian.net/browse/NTA-53) Fractional-index sibling ordering + drag-and-drop reorder
-  - [ ] [NTA-54](https://sandeep12biswas.atlassian.net/browse/NTA-54) Soft-delete trash + cascade delete for folders/notebooks
-  - [ ] [NTA-55](https://sandeep12biswas.atlassian.net/browse/NTA-55) Breadcrumb trail above the editor canvas
-  - [ ] [NTA-56](https://sandeep12biswas.atlassian.net/browse/NTA-56) Lazy loading + virtualized panes + incremental title/text search index
+  - [x] [NTA-52](https://sandeep12biswas.atlassian.net/browse/NTA-52) Structural undo stack: Move/Rename/Delete/Create commands
+  - [x] [NTA-53](https://sandeep12biswas.atlassian.net/browse/NTA-53) Fractional-index sibling ordering + drag-and-drop reorder
+  - [x] [NTA-54](https://sandeep12biswas.atlassian.net/browse/NTA-54) Soft-delete trash + cascade delete for folders/notebooks
+  - [x] [NTA-55](https://sandeep12biswas.atlassian.net/browse/NTA-55) Breadcrumb trail above the editor canvas
+  - [x] [NTA-56](https://sandeep12biswas.atlassian.net/browse/NTA-56) Lazy loading + virtualized panes + incremental title/text search index
 
 ## Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text ⚪ NOT STARTED
 

@@ -40,10 +40,34 @@
 // folder's pages with subpages nested. Both read/write the in-memory
 // `WorkspaceNode` tree store in ../workspace/ (NTA-49).
 //
-// TODO(NTA-52/53/54/55): structural-operation undo stack, same-parent
-// fractional-index drag-reorder polish, a trash UI, and the breadcrumb
-// trail above the editor canvas are separate subtasks of the same parent
-// story (NTA-43) — not built here.
+// NTA-55 adds the breadcrumb trail above the editor canvas:
+// `buildBreadcrumb` (./breadcrumb.ts) + `BreadcrumbTrail`
+// (./BreadcrumbTrail.tsx) turn the open page's ancestor chain
+// (../workspace's `getAncestorChain`) into a clickable "notebook >
+// folder > ... > page" trail, mirroring the same pure-model /
+// React-component split.
+//
+// NTA-52 adds the structural-operation undo/redo stack
+// (./structuralUndoStack.ts, ./workspaceCommands.ts) that
+// `FolderTreePane` now routes its create/rename/move/delete through.
+//
+// NTA-53 adds precise same-parent drag-to-reorder to `FolderTreePane`
+// (`canDrop`/`resolveDrop` in ./folderTree.ts) on top of NTA-50's
+// drop-to-reparent, plus automatic order-key rebalancing in
+// ../workspace/index.ts's `moveNode`.
+//
+// NTA-54 adds the Trash UI: `buildTrashList` (./trash.ts) + `TrashPane`
+// (./TrashPane.tsx) browse/restore/permanently-delete trashed nodes
+// (cascade soft-delete itself was already NTA-49's `deleteNode`), plus a
+// background sweep purging anything past the retention window.
+//
+// NTA-56 adds three things to this directory: `FolderTreePane`/
+// `PageListPane` now render through `react-window`'s `FixedSizeList`
+// (backed by `./useElementSize.ts`, sized via `./virtualization.ts`'s
+// shared row-height constant) instead of a plain `.map(...)`, so a large
+// tree/page list only ever mounts the rows currently scrolled into view;
+// `SearchBox` (./SearchBox.tsx) + `./searchNavigation.ts` give the new
+// incremental search index (../search/) a place in the running app.
 
 import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { RegisteredPlugin } from "../registry";
@@ -196,8 +220,29 @@ export type { AppShellProps } from "./AppShell";
 export { PluginsStatusPanel } from "./PluginsStatusPanel";
 export type { PluginsStatusPanelProps } from "./PluginsStatusPanel";
 export { FolderTreePane } from "./FolderTreePane";
-export { buildFolderTree, canReparent } from "./folderTree";
-export type { FolderTreeRow } from "./folderTree";
+export { buildFolderTree, canDrop, canReparent, resolveDrop } from "./folderTree";
+export type { DropPosition, FolderTreeRow, ResolvedDrop } from "./folderTree";
 export { PageListPane } from "./PageListPane";
 export { buildPageList } from "./pageList";
 export type { PageListRow } from "./pageList";
+export { BreadcrumbTrail } from "./BreadcrumbTrail";
+export { buildBreadcrumb } from "./breadcrumb";
+export type { BreadcrumbSegment } from "./breadcrumb";
+export { useStructuralUndoStore, pushCommand, popUndo, popRedo } from "./structuralUndoStack";
+export type { Command, UndoStackState } from "./structuralUndoStack";
+export {
+  createCreateNodeCommand,
+  createRenameNodeCommand,
+  createMoveNodeCommand,
+  createDeleteNodeCommand,
+} from "./workspaceCommands";
+export { TrashPane } from "./TrashPane";
+export type { TrashPaneProps } from "./TrashPane";
+export { buildTrashList } from "./trash";
+export type { TrashRow } from "./trash";
+export { SearchBox } from "./SearchBox";
+export { resolveSearchResultSelection } from "./searchNavigation";
+export type { SearchResultSelection } from "./searchNavigation";
+export { useElementSize } from "./useElementSize";
+export type { ElementSize } from "./useElementSize";
+export { PANE_ROW_HEIGHT } from "./virtualization";
