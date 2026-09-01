@@ -26,9 +26,54 @@ importers:
       '@linnote/contrast-util':
         specifier: workspace:*
         version: link:../../packages/contrast-util
+      '@linnote/plugin-element-file-attachment':
+        specifier: workspace:*
+        version: link:../../plugins/element-file-attachment
+      '@linnote/plugin-element-image':
+        specifier: workspace:*
+        version: link:../../plugins/element-image
+      '@linnote/plugin-element-ink':
+        specifier: workspace:*
+        version: link:../../plugins/element-ink
+      '@linnote/plugin-element-text-segment':
+        specifier: workspace:*
+        version: link:../../plugins/element-text-segment
+      '@linnote/plugin-element-youtube-embed':
+        specifier: workspace:*
+        version: link:../../plugins/element-youtube-embed
+      '@linnote/plugin-format-alignment':
+        specifier: workspace:*
+        version: link:../../plugins/format-alignment
+      '@linnote/plugin-format-bold':
+        specifier: workspace:*
+        version: link:../../plugins/format-bold
+      '@linnote/plugin-format-bullet-list':
+        specifier: workspace:*
+        version: link:../../plugins/format-bullet-list
+      '@linnote/plugin-format-checkbox-list':
+        specifier: workspace:*
+        version: link:../../plugins/format-checkbox-list
+      '@linnote/plugin-format-font-color':
+        specifier: workspace:*
+        version: link:../../plugins/format-font-color
+      '@linnote/plugin-format-font-size':
+        specifier: workspace:*
+        version: link:../../plugins/format-font-size
+      '@linnote/plugin-format-headers':
+        specifier: workspace:*
+        version: link:../../plugins/format-headers
+      '@linnote/plugin-format-italic':
+        specifier: workspace:*
+        version: link:../../plugins/format-italic
       '@linnote/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+      '@linnote/plugin-sync-google-drive':
+        specifier: workspace:*
+        version: link:../../plugins/sync-google-drive
+      '@linnote/plugin-sync-onedrive':
+        specifier: workspace:*
+        version: link:../../plugins/sync-onedrive
       '@linnote/rich-text-engine':
         specifier: workspace:*
         version: link:../../packages/rich-text-engine

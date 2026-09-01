@@ -26,8 +26,24 @@
 // Editor Canvas placeholder panes into the full layout from §2 — `App.tsx`
 // just renders it.
 //
-// TODO(phase-2): Folder Tree pane + Page List pane (§4.1, §5.4), fractional
-// -index drag-to-reorder, breadcrumb trail.
+// NTA-15 (integration) wires a real, activated `PluginRegistry` (built in
+// ../App.tsx) into `AppShell` — `buildMenuBar`/`buildToolbar` above now run
+// against real active plugins instead of an empty list — and adds
+// `PluginsStatusPanel` (./PluginsStatusPanel.tsx), the minimal
+// "Settings > Plugins" stand-in the story's acceptance criteria needs.
+//
+// NTA-49/50/51 add the real Folder Tree / Page List panes: `buildFolderTree`
+// (./folderTree.ts) + `FolderTreePane` (./FolderTreePane.tsx) render the
+// notebook/folder subset of the tree with expand/collapse, drag-to-reparent,
+// and a rename/move/delete/new-folder context menu; `buildPageList`
+// (./pageList.ts) + `PageListPane` (./PageListPane.tsx) list the selected
+// folder's pages with subpages nested. Both read/write the in-memory
+// `WorkspaceNode` tree store in ../workspace/ (NTA-49).
+//
+// TODO(NTA-52/53/54/55): structural-operation undo stack, same-parent
+// fractional-index drag-reorder polish, a trash UI, and the breadcrumb
+// trail above the editor canvas are separate subtasks of the same parent
+// story (NTA-43) — not built here.
 
 import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { RegisteredPlugin } from "../registry";
@@ -176,3 +192,12 @@ export type { MenuBarProps } from "./MenuBar";
 export { Toolbar } from "./Toolbar";
 export type { ToolbarProps } from "./Toolbar";
 export { AppShell } from "./AppShell";
+export type { AppShellProps } from "./AppShell";
+export { PluginsStatusPanel } from "./PluginsStatusPanel";
+export type { PluginsStatusPanelProps } from "./PluginsStatusPanel";
+export { FolderTreePane } from "./FolderTreePane";
+export { buildFolderTree, canReparent } from "./folderTree";
+export type { FolderTreeRow } from "./folderTree";
+export { PageListPane } from "./PageListPane";
+export { buildPageList } from "./pageList";
+export type { PageListRow } from "./pageList";
