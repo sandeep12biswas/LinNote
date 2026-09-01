@@ -117,7 +117,7 @@ block-and-snap (Phase 6), all one story since each builds on the last.
 - [ ] [NTA-32](https://sandeep12biswas.atlassian.net/browse/NTA-32) — Core note editor: canvas, segment blocks & rich text 🟡
   - [x] [NTA-33](https://sandeep12biswas.atlassian.net/browse/NTA-33) Canvas viewport: pan/zoom transform & render surface
   - [x] [NTA-34](https://sandeep12biswas.atlassian.net/browse/NTA-34) Page header: title, optional date & alignment
-  - [ ] [NTA-35](https://sandeep12biswas.atlassian.net/browse/NTA-35) Page background color + auto-contrast font suggestion
+  - [x] [NTA-35](https://sandeep12biswas.atlassian.net/browse/NTA-35) Page background color + auto-contrast font suggestion
   - [x] [NTA-36](https://sandeep12biswas.atlassian.net/browse/NTA-36) Rich text engine: mount TipTap inside a canvas segment
   - [x] [NTA-37](https://sandeep12biswas.atlassian.net/browse/NTA-37) Segment block: invisible create-on-type
   - [ ] [NTA-38](https://sandeep12biswas.atlassian.net/browse/NTA-38) Segment block: deliberate visible creation
