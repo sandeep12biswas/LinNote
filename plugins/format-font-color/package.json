@@ -20,6 +20,8 @@
   "devDependencies": {
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
+    "vitest": "^2.1.4",
+    "jsdom": "^30.0.1",
     "@vitejs/plugin-react": "^4.6.0",
     "@linnote/plugin-playground": "workspace:*",
     "react": "^19.1.0",

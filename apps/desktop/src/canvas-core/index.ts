@@ -268,3 +268,4 @@ export type { CanvasCoordinates, CanvasPoint, CanvasViewportProps } from "./Canv
 export { SegmentLayerHost } from "./SegmentLayerHost";
 export { PageHeader } from "./PageHeader";
 export { BackgroundPicker } from "./BackgroundPicker";
+export { FontColorHost } from "./FontColorHost";

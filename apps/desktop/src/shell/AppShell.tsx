@@ -57,9 +57,14 @@
 // install a real, page-aware handler for the "Add Segment" toolbar/menu
 // command; see that file's and ../registry/createContext.ts's header
 // comments.
+//
+// NTA-57 mounts `FontColorHost` (../canvas-core/FontColorHost.tsx) the
+// same CommandBus-overwrite way, alongside (not inside) `CanvasViewport`
+// — it renders nothing, so it doesn't need to be inside the pan/zoom
+// transform the way `SegmentLayerHost` does.
 
 import { useState } from "react";
-import { BackgroundPicker, CanvasViewport, PageHeader, SegmentLayerHost } from "../canvas-core";
+import { BackgroundPicker, CanvasViewport, FontColorHost, PageHeader, SegmentLayerHost } from "../canvas-core";
 import { useNavigationStore } from "../store";
 import { buildMenuBar, buildToolbar } from "./index";
 import { MenuBar } from "./MenuBar";
@@ -106,17 +111,20 @@ export function AppShell({ registeredPlugins, onRunCommand, commandBus }: AppShe
         <section className="app-shell__pane app-shell__pane--editor-canvas" aria-label="Editor Canvas">
           <BreadcrumbTrail />
           {activePageId ? (
-            <CanvasViewport
-              pageId={activePageId}
-              header={
-                <>
-                  <PageHeader pageId={activePageId} />
-                  <BackgroundPicker pageId={activePageId} />
-                </>
-              }
-            >
-              <SegmentLayerHost pageId={activePageId} commandBus={commandBus} />
-            </CanvasViewport>
+            <>
+              <FontColorHost pageId={activePageId} commandBus={commandBus} />
+              <CanvasViewport
+                pageId={activePageId}
+                header={
+                  <>
+                    <PageHeader pageId={activePageId} />
+                    <BackgroundPicker pageId={activePageId} />
+                  </>
+                }
+              >
+                <SegmentLayerHost pageId={activePageId} commandBus={commandBus} />
+              </CanvasViewport>
+            </>
           ) : (
             <h2 className="app-shell__pane-label">Editor Canvas</h2>
           )}
