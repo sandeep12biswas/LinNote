@@ -39,7 +39,7 @@
 // TODO(phase-8): Command stack (§13), diff-based, capped at ~200 entries.
 
 import { create } from "zustand";
-import type { NotePage } from "../types";
+import type { CanvasElement, NotePage } from "../types";
 import { createSeedNotePages, DEFAULT_BACKGROUND_COLOR } from "./mockData";
 
 // ---- Viewport: pan/zoom transform (NTA-33) --------------------------------
@@ -134,6 +134,33 @@ export function getOrCreatePage(
   return { pages: { ...pages, [id]: page }, page };
 }
 
+/**
+ * Pure: returns a new `NotePage` with `element` appended to `elements`
+ * and `updatedAt` bumped — `addElement` below's zustand wrapper, mirrors
+ * `getOrCreatePage`'s pure-function-plus-store-action split above.
+ */
+export function addElementToPage(page: NotePage, element: CanvasElement): NotePage {
+  return { ...page, elements: [...page.elements, element], updatedAt: new Date().toISOString() };
+}
+
+/**
+ * Pure: returns a new `NotePage` with the element matching `elementId`
+ * replaced by `updater(element)` — a no-op (same `page` reference) if no
+ * element with that id exists. `updateElement` below's zustand wrapper.
+ */
+export function updateElementInPage(
+  page: NotePage,
+  elementId: string,
+  updater: (element: CanvasElement) => CanvasElement,
+): NotePage {
+  if (!page.elements.some((element) => element.id === elementId)) return page;
+  return {
+    ...page,
+    elements: page.elements.map((element) => (element.id === elementId ? updater(element) : element)),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 interface NotePageState {
   pages: Record<string, NotePage>;
   /**
@@ -144,6 +171,21 @@ interface NotePageState {
    * to a stable object instead of a fresh one on every call/render.
    */
   ensurePage: (id: string) => NotePage;
+  /**
+   * Appends `element` onto `id`'s page — get-or-creates the page first
+   * (same as `ensurePage`) so inserting into a page that hasn't been
+   * opened yet doesn't throw. The one mutating action a
+   * CanvasElement-inserting plugin calls (NTA-37's create-on-type
+   * gesture today, via ./SegmentLayerHost.tsx). Direct `set()`, no
+   * undo-stack entry yet — see this file's `TODO(phase-8)` header note.
+   */
+  addElement: (id: string, element: CanvasElement) => void;
+  /**
+   * Replaces one element on `id`'s page via `updater`, e.g. a segment's
+   * rich-text `content` changing on every keystroke. No-ops if `id`'s
+   * page hasn't been opened/created yet or has no element with that id.
+   */
+  updateElement: (id: string, elementId: string, updater: (element: CanvasElement) => CanvasElement) => void;
 }
 
 /**
@@ -162,8 +204,18 @@ export const useNotePageStore = create<NotePageState>((set, get) => ({
     if (result.pages !== get().pages) set({ pages: result.pages });
     return result.page;
   },
+  addElement: (id, element) => {
+    const { pages: withPage, page } = getOrCreatePage(get().pages, id);
+    set({ pages: { ...withPage, [id]: addElementToPage(page, element) } });
+  },
+  updateElement: (id, elementId, updater) => {
+    const page = get().pages[id];
+    if (!page) return;
+    set({ pages: { ...get().pages, [id]: updateElementInPage(page, elementId, updater) } });
+  },
 }));
 
 export { createSeedNotePages } from "./mockData";
-export { CanvasViewport } from "./CanvasViewport";
-export type { CanvasViewportProps } from "./CanvasViewport";
+export { CanvasViewport, useCanvasCoordinates } from "./CanvasViewport";
+export type { CanvasCoordinates, CanvasPoint, CanvasViewportProps } from "./CanvasViewport";
+export { SegmentLayerHost } from "./SegmentLayerHost";
