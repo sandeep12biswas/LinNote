@@ -50,6 +50,13 @@
 // NTA-35 mounts `BackgroundPicker` (../canvas-core/BackgroundPicker.tsx)
 // alongside `PageHeader` in that same `header` slot — the page
 // background color picker + auto-contrast suggestion.
+//
+// NTA-38 threads `commandBus` down to `SegmentLayerHost` alongside
+// `pageId` — it needs direct `register`/`unregister` access (not just
+// the `onRunCommand` wrapper every other click handler here uses) to
+// install a real, page-aware handler for the "Add Segment" toolbar/menu
+// command; see that file's and ../registry/createContext.ts's header
+// comments.
 
 import { useState } from "react";
 import { BackgroundPicker, CanvasViewport, PageHeader, SegmentLayerHost } from "../canvas-core";
@@ -63,14 +70,15 @@ import { PageListPane } from "./PageListPane";
 import { BreadcrumbTrail } from "./BreadcrumbTrail";
 import { TrashPane } from "./TrashPane";
 import { SearchBox } from "./SearchBox";
-import type { RegisteredPlugin } from "../registry";
+import type { CommandBus, RegisteredPlugin } from "../registry";
 
 export interface AppShellProps {
   registeredPlugins: RegisteredPlugin[];
   onRunCommand: (commandId: string) => void;
+  commandBus: CommandBus;
 }
 
-export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
+export function AppShell({ registeredPlugins, onRunCommand, commandBus }: AppShellProps) {
   const menuBarModel = buildMenuBar(registeredPlugins);
   const toolbarModel = buildToolbar(registeredPlugins);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -107,7 +115,7 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
                 </>
               }
             >
-              <SegmentLayerHost pageId={activePageId} />
+              <SegmentLayerHost pageId={activePageId} commandBus={commandBus} />
             </CanvasViewport>
           ) : (
             <h2 className="app-shell__pane-label">Editor Canvas</h2>

@@ -1,7 +1,7 @@
 import { act, useCallback, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { isPointInsideSegment, nextZIndex, SegmentLayer, type SegmentBlockData } from "./SegmentLayer";
+import { isPointInsideSegment, nextZIndex, SegmentLayer, type CanvasPoint, type SegmentBlockData } from "./SegmentLayer";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -65,6 +65,69 @@ function Harness({ pointerPosition }: { pointerPosition: { x: number; y: number 
       onSegmentContentChange={handleContentChange}
     />
   );
+}
+
+/**
+ * Imperative handle for the "advanced" harness below (NTA-38 tests) —
+ * lets a test drive `pointerPosition` over time (a drag has a start and
+ * an end) and call the "arm" trigger `SegmentLayer` hands its host via
+ * `onCreateVisibleSegmentReady`, standing in for a real toolbar/menu
+ * command dispatch.
+ */
+interface Controller {
+  setPointerPosition: (point: CanvasPoint | null) => void;
+  armCreateVisible: () => void;
+  panSuppressedCalls: boolean[];
+}
+
+function makeController(): Controller {
+  return {
+    setPointerPosition: () => {},
+    armCreateVisible: () => {},
+    panSuppressedCalls: [],
+  };
+}
+
+function DrawHarness({ controller, initialPointerPosition = null }: { controller: Controller; initialPointerPosition?: CanvasPoint | null }) {
+  const [segments, setSegments] = useState<SegmentBlockData[]>([]);
+  const [pointerPosition, setPointerPosition] = useState<CanvasPoint | null>(initialPointerPosition);
+  controller.setPointerPosition = setPointerPosition;
+
+  const handleCreate = useCallback((segment: SegmentBlockData) => {
+    setSegments((current) => [...current, segment]);
+  }, []);
+  const handleContentChange = useCallback((id: string, content: SegmentBlockData["content"]) => {
+    setSegments((current) => current.map((segment) => (segment.id === id ? { ...segment, content } : segment)));
+  }, []);
+  const handleReady = useCallback(
+    (arm: () => void) => {
+      controller.armCreateVisible = arm;
+    },
+    [controller],
+  );
+  const setPanSuppressed = useCallback(
+    (suppressed: boolean) => {
+      controller.panSuppressedCalls.push(suppressed);
+    },
+    [controller],
+  );
+
+  return (
+    <SegmentLayer
+      segments={segments}
+      pointerPosition={pointerPosition}
+      onCreateSegment={handleCreate}
+      onSegmentContentChange={handleContentChange}
+      onCreateVisibleSegmentReady={handleReady}
+      setPanSuppressed={setPanSuppressed}
+    />
+  );
+}
+
+function dispatchPointer(type: "pointerdown" | "pointerup", button = 0): void {
+  act(() => {
+    window.dispatchEvent(new PointerEvent(type, { button, bubbles: true }));
+  });
 }
 
 describe("isPointInsideSegment", () => {
@@ -175,5 +238,93 @@ describe("SegmentLayer: invisible create-on-type (NTA-37)", () => {
     });
 
     expect(container!.querySelector(".segment-block")).toBeNull();
+  });
+});
+
+describe("SegmentLayer: deliberate visible creation (NTA-38)", () => {
+  it("does nothing until armed — pointer activity alone never creates a visible segment", () => {
+    const controller = makeController();
+    mount(<DrawHarness controller={controller} initialPointerPosition={{ x: 20, y: 20 }} />);
+
+    dispatchPointer("pointerdown");
+    dispatchPointer("pointerup");
+
+    expect(container!.querySelector(".segment-block")).toBeNull();
+  });
+
+  it("a plain click after arming creates a default-sized visible segment at the click point, suppressing then releasing pan", () => {
+    const controller = makeController();
+    mount(<DrawHarness controller={controller} initialPointerPosition={{ x: 20, y: 20 }} />);
+
+    act(() => controller.armCreateVisible());
+    dispatchPointer("pointerdown"); // no movement between down and up -> "plain click"
+    dispatchPointer("pointerup");
+
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+    expect(block).not.toBeNull();
+    expect(block.className).toContain("segment-block--visible");
+    expect(block.style.left).toBe("20px");
+    expect(block.style.top).toBe("20px");
+    expect(controller.panSuppressedCalls).toEqual([true, false]);
+  });
+
+  it("a drag past the threshold after arming creates a visible segment sized and positioned to the dragged rectangle", () => {
+    const controller = makeController();
+    mount(<DrawHarness controller={controller} initialPointerPosition={{ x: 100, y: 80 }} />);
+
+    act(() => controller.armCreateVisible());
+    dispatchPointer("pointerdown"); // drag start at (100, 80)
+    act(() => controller.setPointerPosition({ x: 40, y: 30 })); // dragged up-left to (40, 30)
+    dispatchPointer("pointerup");
+
+    const block = container!.querySelector(".segment-block") as HTMLElement;
+    expect(block).not.toBeNull();
+    // top-left of the normalized rectangle, not the drag's start point
+    expect(block.style.left).toBe("40px");
+    expect(block.style.top).toBe("30px");
+    expect(block.style.width).toBe("60px"); // |100 - 40|
+  });
+
+  it("disarms and creates nothing when the first pointerdown after arming lands off-canvas (pointer position null), releasing the pan suppression arming set", () => {
+    const controller = makeController();
+    mount(<DrawHarness controller={controller} initialPointerPosition={null} />);
+
+    act(() => controller.armCreateVisible());
+    dispatchPointer("pointerdown");
+    dispatchPointer("pointerup");
+
+    expect(container!.querySelector(".segment-block")).toBeNull();
+    expect(controller.panSuppressedCalls).toEqual([true, false]);
+  });
+
+  it("Escape cancels an armed-but-not-yet-dragging gesture", () => {
+    const controller = makeController();
+    mount(<DrawHarness controller={controller} initialPointerPosition={{ x: 20, y: 20 }} />);
+
+    act(() => controller.armCreateVisible());
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    dispatchPointer("pointerdown");
+    dispatchPointer("pointerup");
+
+    expect(container!.querySelector(".segment-block")).toBeNull();
+  });
+
+  it("ignores other keystrokes while armed, rather than falling through to invisible create-on-type", () => {
+    const controller = makeController();
+    mount(<DrawHarness controller={controller} initialPointerPosition={{ x: 20, y: 20 }} />);
+
+    act(() => controller.armCreateVisible());
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "H", bubbles: true, cancelable: true }));
+    });
+
+    expect(container!.querySelector(".segment-block")).toBeNull();
+
+    // still armed afterwards — a click now still completes the visible-creation gesture
+    dispatchPointer("pointerdown");
+    dispatchPointer("pointerup");
+    expect(container!.querySelector(".segment-block")?.className).toContain("segment-block--visible");
   });
 });

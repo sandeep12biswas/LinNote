@@ -34,6 +34,42 @@ describe("createCommandBus", () => {
     bus.run("core.format.bold.apply");
     expect(fn).toHaveBeenCalledTimes(1);
   });
+
+  it("is shared in the other direction too: app-side code can overwrite a plugin's own registration (NTA-38)", () => {
+    const bus = createCommandBus();
+    const createContext = createPluginContextFactory({ commandBus: bus });
+    const ctx = createContext("core.element.text-segment");
+
+    const fallback = vi.fn();
+    ctx.commands.register("core.element.text-segment.createVisible", fallback);
+    const real = vi.fn();
+    bus.register("core.element.text-segment.createVisible", real); // app-side (e.g. SegmentLayerHost) overwrites it once live state exists
+
+    bus.run("core.element.text-segment.createVisible");
+    expect(real).toHaveBeenCalledTimes(1);
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("unregister removes a command, so running it afterward falls back to the warn-and-no-op path", () => {
+    const bus = createCommandBus();
+    const fn = vi.fn();
+    bus.register("cmd.a", fn);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    bus.unregister("cmd.a");
+
+    expect(bus.has("cmd.a")).toBe(false);
+    expect(bus.run("cmd.a")).toBeUndefined();
+    expect(fn).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+
+    warn.mockRestore();
+  });
+
+  it("unregister on an id that was never registered is a no-op, not an error", () => {
+    const bus = createCommandBus();
+    expect(() => bus.unregister("cmd.never-registered")).not.toThrow();
+  });
 });
 
 describe("createPluginContextFactory", () => {
