@@ -1,11 +1,11 @@
 # LinNote — Phased Implementation Plan
 
 This mirrors the phase breakdown in `docs/architecture.md` §9, cross-referenced
-against the actual state of Jira project **NTA** as of 2026-08-30. Update this
-file whenever a phase's Jira mapping changes (a new Story is broken out, a
-phase's scope shifts) — it's the one place to see "what phase are we on and
-what's actually tracked for it," rather than re-deriving it from the Jira
-backlog each time.
+against the actual state of Jira project **NTA** as of 2026-08-30, last
+updated 2026-09-01 (Phase 2 completion). Update this file whenever a phase's
+Jira mapping changes (a new Story is broken out, a phase's scope shifts) —
+it's the one place to see "what phase are we on and what's actually tracked
+for it," rather than re-deriving it from the Jira backlog each time.
 
 Every phase now has a Jira story (NTA-43…NTA-84, added 2026-08-30, closed the
 gaps this file originally flagged) — see `docs/task-list.md` for the same
@@ -54,22 +54,35 @@ static layout).
   - NTA-30 ⚪ `core.sync.onedrive`
   - NTA-31 ⚪ `core.sync.google-drive`
 
-## Phase 2 — Workspace hierarchy 🟡
+## Phase 2 — Workspace hierarchy ✅
 
 `WorkspaceNode` tree, Folder Tree + Page List panes wired to real data,
 create/rename/move/delete, fractional-index ordering, trash. NTA-13 (Phase 1)
 only built the *static* 4-region layout with placeholder panes — this phase
 wires the tree data and real pane behavior.
 
-- **NTA-43** (Story) 🟡 — Phase 2: Workspace hierarchy
-  - NTA-49 ✅ WorkspaceNode tree data model + id-based flat storage — `apps/desktop/src/workspace/`, on `feature/nta-49-51-workspace-hierarchy` (pushed, not yet merged to develop)
-  - NTA-50 ✅ Folder Tree pane: render folder/notebook nodes, expand/collapse, drag-to-reparent — `apps/desktop/src/shell/FolderTreePane.tsx`, same branch
-  - NTA-51 ✅ Page List pane: list pages for selected folder, nested subpages, highlight open page — `apps/desktop/src/shell/PageListPane.tsx`, same branch
-  - NTA-52 ⚪ Structural undo stack: Move/Rename/Delete/Create commands
-  - NTA-53 ⚪ Fractional-index sibling ordering + drag-and-drop reorder
-  - NTA-54 ⚪ Soft-delete trash + cascade delete for folders/notebooks
-  - NTA-55 ⚪ Breadcrumb trail above the editor canvas
-  - NTA-56 ⚪ Lazy loading + virtualized panes + incremental title/text search index
+- **NTA-43** (Story) ✅ — Phase 2: Workspace hierarchy — all 8 subtasks merged
+  into `feature/module-build` as of 2026-09-01 (this session's own
+  work-tracking convention: everything lands on that one long-lived branch
+  now, not a `feature/nta-*` branch per story/subtask). NTA-52…56 were built
+  by five `developer` subagents in parallel, each in an isolated git
+  worktree, then merged in one at a time by the orchestrating session,
+  resolving conflicts where more than one subtask touched the same file
+  (`shell/index.ts`'s barrel exports, `shell/FolderTreePane.tsx`'s
+  drag-and-drop rendering). Verified after all five landed: desktop
+  typecheck clean, 173/173 desktop tests passing, `pnpm lint:boundaries`
+  clean. Jira still shows NTA-52…56 as "In Progress" (stale — set by an
+  earlier session's ticket-fetch step without the work being done at the
+  time) — left as-is per instruction, not yet reconciled with the actual
+  Done state of the code.
+  - NTA-49 ✅ WorkspaceNode tree data model + id-based flat storage — `apps/desktop/src/workspace/`
+  - NTA-50 ✅ Folder Tree pane: render folder/notebook nodes, expand/collapse, drag-to-reparent — `apps/desktop/src/shell/FolderTreePane.tsx`
+  - NTA-51 ✅ Page List pane: list pages for selected folder, nested subpages, highlight open page — `apps/desktop/src/shell/PageListPane.tsx`
+  - NTA-52 ✅ Structural undo stack: Move/Rename/Delete/Create commands — `apps/desktop/src/shell/structuralUndoStack.ts`, `workspaceCommands.ts`
+  - NTA-53 ✅ Fractional-index sibling ordering + drag-and-drop reorder — `apps/desktop/src/workspace/index.ts`'s `rebalanceSiblings`/`needsRebalance`, `apps/desktop/src/shell/folderTree.ts`'s `canDrop`/`resolveDrop`
+  - NTA-54 ✅ Soft-delete trash + cascade delete for folders/notebooks — `apps/desktop/src/shell/TrashPane.tsx`, `apps/desktop/src/workspace/index.ts`'s trash lifecycle functions
+  - NTA-55 ✅ Breadcrumb trail above the editor canvas — `apps/desktop/src/shell/BreadcrumbTrail.tsx`, `breadcrumb.ts`
+  - NTA-56 ✅ Lazy loading + virtualized panes + incremental title/text search index — `apps/desktop/src/search/`, `apps/desktop/src/shell/useElementSize.ts`/`virtualization.ts`; only `WorkspaceNode.title` is indexed today, page content indexing is stubbed pending Phase 3/8
 
 ## Phase 3 — Core canvas 🟡
 
@@ -200,13 +213,21 @@ Kept for history; their intent is absorbed into the phases above:
 Every phase now has a Jira story — NTA-43…NTA-48, added 2026-08-30, cover
 what used to be gaps. Rough build order, with reasoning:
 
-1. Finish the remaining NTA-16 stub activations (NTA-19…31) — cheap, already
-   half done, gives every phase below a visible menu/toolbar hook to build
-   real logic against.
-2. Phase 2 — Workspace hierarchy (NTA-43) — blocks real Folder Tree / Page
-   List data; nothing else can be tested against a real page without it.
+1. Finish the remaining NTA-16 stub activations (NTA-19…31) — **still not
+   done**; deferred out of order in favor of finishing Phase 2 below instead
+   of context-switching mid-story once NTA-49/50/51 had already landed.
+   Still open, still cheap, still gives every later phase a visible
+   menu/toolbar hook — just no longer strictly first.
+2. ✅ **Phase 2 — Workspace hierarchy (NTA-43) — done as of 2026-09-01.**
+   Picked up ahead of the NTA-16 stub activations above once NTA-49/50/51
+   had already landed on `feature/module-build`, on the "finish what's
+   in-flight before switching lanes" principle — see this phase's own entry
+   above for how NTA-52…56 were built (five parallel subagents, merged in
+   one at a time). Real Folder Tree / Page List data, undo, ordering, trash,
+   breadcrumbs, and a search index all exist now — nothing below has to test
+   against a hardcoded stub page anymore.
 3. Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text
-   (NTA-32) — each sub-piece builds directly on the last.
+   (NTA-32) — each sub-piece builds directly on the last. **Next up.**
 4. Phase 5 — Remaining formatting plugins, build (NTA-44).
 5. Phase 7 — Attachments & embeds, build (NTA-45).
 6. Phase 8 — Undo/redo & full persistence (NTA-46).
