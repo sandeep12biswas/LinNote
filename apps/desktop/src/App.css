@@ -137,6 +137,35 @@ button {
 
 .app-shell__pane--editor-canvas {
   flex: 1 1 auto;
+  /* The pan/zoom surface manages its own scroll/clipping (NTA-33) — the
+     pane itself must not also scroll/pad, or dragging fights the pane's
+     native scrollbars. */
+  overflow: hidden;
+  padding: 0;
+}
+
+/* ---- Canvas viewport: pan/zoom render surface (NTA-33, docs/architecture.md §5) ---- */
+
+.canvas-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* Pointer-drag pan owns touch input here — don't let the WebView
+     interpret a drag as a native touch-scroll/pinch gesture instead. */
+  touch-action: none;
+  cursor: grab;
+}
+
+.canvas-viewport:active {
+  cursor: grabbing;
+}
+
+.canvas-viewport__transform {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
 }
 
 @media (prefers-color-scheme: dark) {
