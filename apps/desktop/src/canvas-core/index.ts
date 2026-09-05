@@ -395,6 +395,7 @@ export { BackgroundPicker } from "./BackgroundPicker";
 export { FontColorHost } from "./FontColorHost";
 export { FileAttachmentHost } from "./FileAttachmentHost";
 export { YouTubeEmbedHost } from "./YouTubeEmbedHost";
+export { InkLayerHost } from "./InkLayerHost";
 export { registerFlushHook, useCanvasCommandStore } from "./commandStack";
 export type { Command } from "./commandStack";
 export { createCoalescer } from "./coalescer";

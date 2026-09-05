@@ -78,6 +78,11 @@
 // — outside `CanvasViewport`'s pan/zoom transform (it's UI chrome, not
 // page content), same reasoning as `PageHeader`/`BackgroundPicker` living
 // in the `header` slot rather than `children`.
+//
+// NTA-90/91/92/93 mounts `InkLayerHost` (../canvas-core/InkLayerHost.tsx)
+// as another of `CanvasViewport`'s `children`, alongside
+// `SegmentLayerHost` — same renderer-plus-CommandBus-overwrite role,
+// panning/scaling with the page's other content.
 
 import { useState } from "react";
 import {
@@ -86,6 +91,7 @@ import {
   CanvasViewport,
   FileAttachmentHost,
   FontColorHost,
+  InkLayerHost,
   PageHeader,
   SegmentLayerHost,
   YouTubeEmbedHost,
@@ -151,6 +157,7 @@ export function AppShell({ registeredPlugins, onRunCommand, commandBus }: AppShe
                 <SegmentLayerHost pageId={activePageId} commandBus={commandBus} />
                 <FileAttachmentHost pageId={activePageId} commandBus={commandBus} registeredPlugins={registeredPlugins} />
                 <YouTubeEmbedHost pageId={activePageId} commandBus={commandBus} />
+                <InkLayerHost pageId={activePageId} commandBus={commandBus} />
               </CanvasViewport>
             </>
           ) : (

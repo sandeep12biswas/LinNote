@@ -560,6 +560,73 @@ button {
   margin-top: 8px;
 }
 
+/* ---- Ink (NTA-90/91/92/93) ----
+   `.ink-layer__canvas` is sized/positioned to whatever
+   `computeStrokesBounds` (plugins/element-ink/src/ink.ts) says — no
+   fixed intrinsic size, unlike a segment/attachment block. `pointer-
+   events: none` since drawing/erasing is captured window-scoped
+   (InkLayer.tsx's own header comment), not via this element directly —
+   it only ever needs to be *visible*, never clickable. `.ink-tool-panel`
+   is rendered via `createPortal` to `document.body` (InkLayer.tsx), the
+   same fix `.youtube-embed-dialog` above already needed (NTA-64) for a
+   `position: fixed` element nested inside CanvasViewport's pan/zoom
+   transform. */
+
+.ink-layer__canvas {
+  position: absolute;
+  pointer-events: none;
+}
+
+.ink-tool-panel {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f0f0f;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+
+.ink-tool-panel__tools {
+  display: flex;
+  gap: 4px;
+}
+
+.ink-tool-panel__tool {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(15, 15, 15, 0.2);
+  background: #f5f5f5;
+  cursor: pointer;
+}
+
+.ink-tool-panel__tool.is-active {
+  border-color: #1a1a1a;
+  background: #e0e0e0;
+}
+
+.ink-tool-panel__options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9em;
+}
+
+.ink-tool-panel__done {
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(15, 15, 15, 0.2);
+  background: #f5f5f5;
+  cursor: pointer;
+}
+
 .app-shell--loading {
   display: flex;
   align-items: center;
