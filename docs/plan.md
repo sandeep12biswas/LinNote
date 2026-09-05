@@ -2,8 +2,9 @@
 
 This mirrors the phase breakdown in `docs/architecture.md` §9, cross-referenced
 against the actual state of Jira project **NTA** as of 2026-08-30, last
-updated 2026-09-05 (NTA-100/101 gap tickets filed — see the two new
-cross-cutting sections below). Update this file whenever a phase's
+updated 2026-09-05 (NTA-90/91/92/93 — Ink drawing — built; NTA-100/101 gap
+tickets filed — see the cross-cutting sections below). Update this file
+whenever a phase's
 Jira mapping changes (a new Story is broken out, a phase's scope shifts) —
 it's the one place to see "what phase are we on and what's actually tracked
 for it," rather than re-deriving it from the Jira backlog each time.
@@ -125,6 +126,34 @@ formatting plugins (bold, italic, headers) made real.
   - NTA-40 ⚪ Segment block: auto-grow height & manual-resize width with reflow
   - NTA-42 ⚪ Wire real bold/italic/header formatting commands into segments
 
+### Cross-cutting — Ink drawing (core.element.ink) ✅
+
+Named in this doc's own §5 with a working design from the start, but
+never itself scheduled into a phase — Phase 3's own description says
+"viewport transform, ink element type, page header/background," but the
+NTA-32 story actually created for Phase 3 only covered viewport/header/
+background/segments. Added 2026-09-01 to close that gap; built
+2026-09-05.
+
+- **NTA-90** (Story) ✅ — core.element.ink: freehand pointer-capture
+  drawing (perfect-freehand + eraser) — committed on `feature/module-build`
+  (2026-09-05, `dccdc26`). Pointer capture → `perfect-freehand` tapered
+  outline → `Path2D` paint on one bounds-fitted `<canvas>` (single-canvas;
+  tiling is NTA-73/74's later optimization); a `createPortal`-rendered
+  floating tool panel (pen/highlighter/eraser + color/size), sticky
+  selection; both stroke-commit and erase wired into the real undo stack
+  (Phase 8/NTA-46 exists now, updating this story's own originally-stale
+  "not in scope" note). Two real bugs found and fixed by actually driving
+  the app end-to-end via the `run-desktop` skill: eraser hit-testing only
+  checked distance to sampled points, not the segments between them (a
+  sparse pointermove stream left gaps); and pan wasn't actually suppressed
+  for the drag that armed it (the same NTA-38 event-ordering timing issue
+  `SegmentLayer.tsx` already documents). Unblocks NTA-73/74 (Phase 9),
+  though those remain unbuilt.
+  - NTA-91 ✅ Stroke capture & rendering: pointer capture, perfect-freehand outline, Path2D paint
+  - NTA-92 ✅ Tool selection: pen/highlighter/eraser modes, color & size, toolbar-armed draw gesture
+  - NTA-93 ✅ Eraser: whole-stroke and pixel/segment erase modes
+
 ## Phase 5 — Remaining formatting plugins ⚪
 
 Font color (+ contrast), font size, bullet list, checkbox list, alignment —
@@ -195,8 +224,8 @@ Tiled canvases, virtualized panes/segments, per-plugin code-splitting.
 
 - **NTA-47** (Story) 🟡 — Phase 9: Performance pass — **partial**, committed
   on `feature/module-build` (2026-09-05, `51de215`): NTA-75/76 done; NTA-73/74
-  deferred until Ink (NTA-90) exists (nothing to tile/split-layer yet); NTA-77
-  deferred as its own follow-up pass. RAF batching (NTA-75):
+  are now unblocked (Ink/NTA-90 landed 2026-09-05) but not yet themselves
+  built; NTA-77 deferred as its own follow-up pass. RAF batching (NTA-75):
   `apps/desktop/src/canvas-core/coalescer.ts`'s `apply()` now runs on the next
   animation frame instead of synchronously on every `update()` — a fast
   pointermove stream collapses into one `apply()` per frame, using whichever
@@ -212,8 +241,8 @@ Tiled canvases, virtualized panes/segments, per-plugin code-splitting.
   tests in one file — `SegmentLayerHost.test.tsx` now stubs
   `requestAnimationFrame`/`cancelAnimationFrame` directly rather than relying
   on `vi.useFakeTimers()` for frame timing.
-  - NTA-73 ⚪ Tiled ink canvases: viewport-intersecting tiles only — deferred (needs Ink/NTA-90)
-  - NTA-74 ⚪ Static vs. active ink layer split — deferred (needs Ink/NTA-90)
+  - NTA-73 ⚪ Tiled ink canvases: viewport-intersecting tiles only — unblocked (Ink/NTA-90 done), not yet built
+  - NTA-74 ⚪ Static vs. active ink layer split — unblocked (Ink/NTA-90 done), not yet built
   - NTA-75 ✅ RAF batching for pointer-driven state updates
   - NTA-76 ✅ Virtualized segment rendering
   - NTA-77 ⚪ Per-plugin code-splitting — deferred, own follow-up pass
@@ -300,11 +329,11 @@ what used to be gaps. Rough build order, with reasoning:
 6. ✅ Phase 8 — Undo/redo & full persistence (NTA-46) — done as of
    2026-09-05.
 7. 🟡 Phase 9 — Performance pass (NTA-47) — **partial** as of 2026-09-05:
-   NTA-75/76 done; NTA-73/74 wait on Ink (NTA-90), NTA-77 deferred as its own
-   pass. **Next up: Phase 10**, or Ink (NTA-90, not yet a scheduled phase)
-   if NTA-73/74 are picked up first instead.
-8. Phase 10 — Cloud sync, build (NTA-48).
-9. Phase 11 — Stretch (not scheduled, no Jira story — intentionally last).
+   NTA-75/76 done; NTA-77 deferred as its own follow-up pass.
+8. ✅ **Cross-cutting — Ink drawing (NTA-90) — done as of 2026-09-05.**
+   Unblocks NTA-73/74 (Phase 9, above), though those remain unbuilt.
+9. Phase 10 — Cloud sync, build (NTA-48).
+10. Phase 11 — Stretch (not scheduled, no Jira story — intentionally last).
 
 See `docs/task-list.md` for this same order as a single flat, checkable list
-across all 84 issues.
+across all Jira issues in the NTA project.

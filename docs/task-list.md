@@ -7,8 +7,8 @@ never drift for long; if they do, Jira is the source of truth and this file
 gets corrected.
 
 Built by cross-referencing three things as of **2026-08-30**, last updated
-**2026-09-05** (NTA-100/101 gap tickets added — see the two new
-cross-cutting sections below): the Notion "Desing architecture" (v2.2)
+**2026-09-05** (NTA-90/91/92/93 — Ink drawing — built; NTA-100/101 gap
+tickets added — see the cross-cutting sections below): the Notion "Desing architecture" (v2.2)
 and "Plugins" (v1.1) pages, the actual code in this repo (`plugins/*`,
 `apps/desktop/src/*`), and every issue in Jira project NTA (NTA-1…NTA-101).
 See `docs/plan.md` for the narrative gap-analysis this list was generated
@@ -95,7 +95,7 @@ added that day to close the gap.
   - [ ] [NTA-22](https://sandeep12biswas.atlassian.net/browse/NTA-22) core.format.bullet-list
   - [ ] [NTA-23](https://sandeep12biswas.atlassian.net/browse/NTA-23) core.format.checkbox-list
   - [ ] [NTA-24](https://sandeep12biswas.atlassian.net/browse/NTA-24) core.format.alignment
-  - [ ] [NTA-25](https://sandeep12biswas.atlassian.net/browse/NTA-25) core.element.ink — real build tracked as NTA-90 below
+  - [x] [NTA-25](https://sandeep12biswas.atlassian.net/browse/NTA-25) core.element.ink — real implementation via NTA-90-93, not a separate stub
   - [x] [NTA-26](https://sandeep12biswas.atlassian.net/browse/NTA-26) core.element.text-segment — real implementation via NTA-37-41, not a separate stub
   - [ ] [NTA-27](https://sandeep12biswas.atlassian.net/browse/NTA-27) core.element.image — real build tracked as NTA-94 below
   - [x] [NTA-28](https://sandeep12biswas.atlassian.net/browse/NTA-28) core.element.file-attachment — real implementation via NTA-45/62, not a separate stub
@@ -152,21 +152,19 @@ block-and-snap (Phase 6), all one story since each builds on the last.
   - [x] [NTA-41](https://sandeep12biswas.atlassian.net/browse/NTA-41) Segment block: non-overlap (block-and-snap) — *Phase 6*
   - [x] [NTA-42](https://sandeep12biswas.atlassian.net/browse/NTA-42) Wire real bold/italic/header formatting commands into segments
 
-## Cross-cutting — Ink drawing (core.element.ink) ⚪ NOT STARTED
+## Cross-cutting — Ink drawing (core.element.ink) ✅ DONE
 
 Freehand drawing — pointer capture, `perfect-freehand` outline, eraser
 modes. Named in Phase 3's own description ("viewport transform, ink
 element type, page header/background") but never actually included in
-NTA-32, the story created for Phase 3 — this closes that gap. Not
+NTA-32, the story created for Phase 3 — this closed that gap. Not
 sequenced relative to the numbered phases; core-canvas-content-shaped
-like segments, so it can be picked up independent of Phase 5/7 progress.
-Full undo/redo integration deferred to Phase 8 (NTA-46), same as
-segment drag/resize were.
+like segments, so it was picked up independent of Phase 5/7 progress.
 
-- [ ] [NTA-90](https://sandeep12biswas.atlassian.net/browse/NTA-90) — core.element.ink: freehand pointer-capture drawing (perfect-freehand + eraser)
-  - [ ] [NTA-91](https://sandeep12biswas.atlassian.net/browse/NTA-91) Stroke capture & rendering: pointer capture, perfect-freehand outline, Path2D paint
-  - [ ] [NTA-92](https://sandeep12biswas.atlassian.net/browse/NTA-92) Tool selection: pen/highlighter/eraser modes, color & size, toolbar-armed draw gesture
-  - [ ] [NTA-93](https://sandeep12biswas.atlassian.net/browse/NTA-93) Eraser: whole-stroke and pixel/segment erase modes
+- [x] [NTA-90](https://sandeep12biswas.atlassian.net/browse/NTA-90) — core.element.ink: freehand pointer-capture drawing (perfect-freehand + eraser) — done on `feature/module-build` (2026-09-05, commit `dccdc26`). Pointer capture → `perfect-freehand` tapered outline → `Path2D` paint on one bounds-fitted `<canvas>`; a `createPortal`-rendered floating tool panel (pen/highlighter/eraser + color/size, sticky selection). Both stroke-commit and erase wired into the real undo stack via `useCanvasCommandStore` (Phase 8/NTA-46 landed this session, so — unlike segment drag/resize's own history — this wasn't deferred). Two real bugs found and fixed by actually driving the app end-to-end via the `run-desktop` skill: eraser hit-testing only checked distance to sampled points, not the segments between them; and pan wasn't actually suppressed for the drag that armed it (the same NTA-38 event-ordering timing issue `SegmentLayer.tsx` already documents). Unblocks NTA-73/74 (Phase 9), though those remain unbuilt. 36 tests passing in `plugins/element-ink`, 298 in `apps/desktop`.
+  - [x] [NTA-91](https://sandeep12biswas.atlassian.net/browse/NTA-91) Stroke capture & rendering: pointer capture, perfect-freehand outline, Path2D paint
+  - [x] [NTA-92](https://sandeep12biswas.atlassian.net/browse/NTA-92) Tool selection: pen/highlighter/eraser modes, color & size, toolbar-armed draw gesture
+  - [x] [NTA-93](https://sandeep12biswas.atlassian.net/browse/NTA-93) Eraser: whole-stroke and pixel/segment erase modes
 
 ## Phase 5 — Remaining formatting plugins (build) ✅ DONE
 
@@ -232,8 +230,8 @@ NTA-14, existed before this phase — `readTree`/`writePage`/etc. all threw
 Tiled canvases, virtualized panes/segments, per-plugin code-splitting.
 
 - [ ] [NTA-47](https://sandeep12biswas.atlassian.net/browse/NTA-47) — Phase 9: Performance pass — **partial**: NTA-75/76 done on `feature/module-build` (2026-09-05, commit `51de215`); NTA-73/74/77 intentionally deferred (see below), so the phase itself isn't closed out yet. RAF batching (NTA-75): `apps/desktop/src/canvas-core/coalescer.ts`'s `apply()` now runs on the next animation frame instead of synchronously on every `update()`, collapsing a fast pointermove stream into one apply per frame. Virtualized segments (NTA-76): `CanvasViewport.tsx` derives a canvas-space `visibleRect` from the render surface's measured size (`ResizeObserver`, same technique as NTA-56's `useElementSize`) and `SegmentLayerHost.tsx` filters against it via the new `viewportCulling.ts` (400-unit overscan margin) — a segment far outside the viewport unmounts from the DOM while its data stays untouched in `useNotePageStore`. Diagnosed and fixed a pre-existing test-flakiness trap along the way: jsdom's `pretendToBeVisual` mode runs its own real `requestAnimationFrame` driver that can race vitest's fake-timer-patched one across sequential tests in one file — `SegmentLayerHost.test.tsx` now stubs `requestAnimationFrame`/`cancelAnimationFrame` directly instead of relying on `vi.useFakeTimers()` for frame timing.
-  - [ ] [NTA-73](https://sandeep12biswas.atlassian.net/browse/NTA-73) Tiled ink canvases: viewport-intersecting tiles only — deferred until Ink (NTA-90) exists; nothing to tile yet.
-  - [ ] [NTA-74](https://sandeep12biswas.atlassian.net/browse/NTA-74) Static vs. active ink layer split — same reason as NTA-73.
+  - [ ] [NTA-73](https://sandeep12biswas.atlassian.net/browse/NTA-73) Tiled ink canvases: viewport-intersecting tiles only — unblocked (Ink/NTA-90 done 2026-09-05), not yet built.
+  - [ ] [NTA-74](https://sandeep12biswas.atlassian.net/browse/NTA-74) Static vs. active ink layer split — same, unblocked but not yet built.
   - [x] [NTA-75](https://sandeep12biswas.atlassian.net/browse/NTA-75) RAF batching for pointer-driven state updates
   - [x] [NTA-76](https://sandeep12biswas.atlassian.net/browse/NTA-76) Virtualized segment rendering
   - [ ] [NTA-77](https://sandeep12biswas.atlassian.net/browse/NTA-77) Per-plugin code-splitting — deferred as its own follow-up pass; `pnpm --filter desktop build` already shows the >500kB single-chunk warning this would address.

@@ -247,12 +247,18 @@ concerns with no dependency between them.
   `contrast-util`), `format-font-size`, `format-headers` (H1-H3),
   `format-bullet-list`, `format-checkbox-list`, `format-alignment`.
 - **Ink** (`plugins/element-ink`, `core.element.ink`): pointer capture →
-  `perfect-freehand` tapered outline → `Path2D` paint on a per-tile
-  `<canvas>`. Eraser is whole-stroke or pixel/segment, both undoable.
-  `touch-action: none` is required so WebView2/WKWebView doesn't steal
-  pen/touch input. Real build tracked as NTA-90 (added 2026-09-01 — this
-  design predates that ticket but was never itself scheduled into a
-  phase; see NTA-90 for the gap this closed).
+  `perfect-freehand` tapered outline → `Path2D` paint on one bounds-fitted
+  `<canvas>` (tiled per-viewport-region rendering is NTA-73/74's later
+  optimization, not this build's scope). Eraser is whole-stroke or
+  pixel/segment, both undoable. `touch-action: none` (already set on
+  `.canvas-viewport`, NTA-33) satisfies "no native scroll/zoom on
+  pen/touch." Real build done, NTA-90/91/92/93 (2026-09-05) — this design
+  predates NTA-90 but was never itself scheduled into a phase (added
+  2026-09-01; see NTA-90 for the gap this closed). Tool selection is
+  sticky (stays active across strokes), a `createPortal`-rendered floating
+  panel (same fix `core.element.youtube-embed`'s insert dialog needed,
+  NTA-64) for pen/highlighter/eraser + color/size. Now that Ink exists,
+  NTA-73/74 (Phase 9) are unblocked, though not yet themselves built.
 - **Images** (`plugins/element-image`, `core.element.image`): inserted
   via file picker, drag-and-drop onto the canvas, or paste from
   clipboard — the source file is copied into the page's workspace assets
@@ -299,7 +305,8 @@ concerns with no dependency between them.
   `SegmentLayerHost.tsx` filters against it (`viewportCulling.ts`, 400-unit
   overscan) so a segment far outside the viewport unmounts from the DOM
   while its data stays in the model. Tiled ink rendering/static-active
-  layer split (NTA-73/74) wait on Ink (NTA-90) existing at all; per-plugin
+  layer split (NTA-73/74) are unblocked now that Ink exists (NTA-90/91/
+  92/93, 2026-09-05) but not yet themselves built; per-plugin
   code-splitting (NTA-77) is deferred as its own follow-up pass.
 
 ## 6. Persistence
