@@ -1,0 +1,9 @@
+{
+  "name": "run-desktop-driver",
+  "private": true,
+  "description": "Standalone Playwright dependency for driver.mjs — deliberately NOT part of the pnpm workspace (this directory isn't matched by pnpm-workspace.yaml's globs), so `npm install` here doesn't touch the repo's pnpm-managed node_modules.",
+  "type": "module",
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}
