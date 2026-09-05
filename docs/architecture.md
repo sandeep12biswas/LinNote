@@ -291,8 +291,16 @@ concerns with no dependency between them.
   `plugins/format-*` changes (every format command already flows through
   the same segment-content-change path typing does), just disabling
   TipTap's own competing `History` extension
-  (`packages/rich-text-engine`). Tiled rendering/RAF batching/
-  virtualization/code-splitting are still Phase 9 (NTA-47), not built.
+  (`packages/rich-text-engine`). RAF batching + virtualized off-screen
+  segments real build done, NTA-75/76 (Phase 9, partial — 2026-09-05):
+  `coalescer.ts`'s `apply()` now runs on the next animation frame instead
+  of synchronously per `update()`; `CanvasViewport.tsx` derives a
+  canvas-space `visibleRect` from the render surface's measured size and
+  `SegmentLayerHost.tsx` filters against it (`viewportCulling.ts`, 400-unit
+  overscan) so a segment far outside the viewport unmounts from the DOM
+  while its data stays in the model. Tiled ink rendering/static-active
+  layer split (NTA-73/74) wait on Ink (NTA-90) existing at all; per-plugin
+  code-splitting (NTA-77) is deferred as its own follow-up pass.
 
 ## 6. Persistence
 

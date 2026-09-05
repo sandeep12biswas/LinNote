@@ -211,16 +211,16 @@ NTA-14, existed before this phase — `readTree`/`writePage`/etc. all threw
   - [x] [NTA-71](https://sandeep12biswas.atlassian.net/browse/NTA-71) Crash safety: write-to-temp-then-atomic-rename
   - [x] [NTA-72](https://sandeep12biswas.atlassian.net/browse/NTA-72) schemaVersion + migration path for page/tree/plugin-settings
 
-## Phase 9 — Performance pass ⚪ NOT STARTED
+## Phase 9 — Performance pass 🟡 PARTIALLY DONE
 
 Tiled canvases, virtualized panes/segments, per-plugin code-splitting.
 
-- [ ] [NTA-47](https://sandeep12biswas.atlassian.net/browse/NTA-47) — Phase 9: Performance pass
-  - [ ] [NTA-73](https://sandeep12biswas.atlassian.net/browse/NTA-73) Tiled ink canvases: viewport-intersecting tiles only
-  - [ ] [NTA-74](https://sandeep12biswas.atlassian.net/browse/NTA-74) Static vs. active ink layer split
-  - [ ] [NTA-75](https://sandeep12biswas.atlassian.net/browse/NTA-75) RAF batching for pointer-driven state updates
-  - [ ] [NTA-76](https://sandeep12biswas.atlassian.net/browse/NTA-76) Virtualized segment rendering
-  - [ ] [NTA-77](https://sandeep12biswas.atlassian.net/browse/NTA-77) Per-plugin code-splitting
+- [ ] [NTA-47](https://sandeep12biswas.atlassian.net/browse/NTA-47) — Phase 9: Performance pass — **partial**: NTA-75/76 done on `feature/module-build` (2026-09-05, commit `51de215`); NTA-73/74/77 intentionally deferred (see below), so the phase itself isn't closed out yet. RAF batching (NTA-75): `apps/desktop/src/canvas-core/coalescer.ts`'s `apply()` now runs on the next animation frame instead of synchronously on every `update()`, collapsing a fast pointermove stream into one apply per frame. Virtualized segments (NTA-76): `CanvasViewport.tsx` derives a canvas-space `visibleRect` from the render surface's measured size (`ResizeObserver`, same technique as NTA-56's `useElementSize`) and `SegmentLayerHost.tsx` filters against it via the new `viewportCulling.ts` (400-unit overscan margin) — a segment far outside the viewport unmounts from the DOM while its data stays untouched in `useNotePageStore`. Diagnosed and fixed a pre-existing test-flakiness trap along the way: jsdom's `pretendToBeVisual` mode runs its own real `requestAnimationFrame` driver that can race vitest's fake-timer-patched one across sequential tests in one file — `SegmentLayerHost.test.tsx` now stubs `requestAnimationFrame`/`cancelAnimationFrame` directly instead of relying on `vi.useFakeTimers()` for frame timing.
+  - [ ] [NTA-73](https://sandeep12biswas.atlassian.net/browse/NTA-73) Tiled ink canvases: viewport-intersecting tiles only — deferred until Ink (NTA-90) exists; nothing to tile yet.
+  - [ ] [NTA-74](https://sandeep12biswas.atlassian.net/browse/NTA-74) Static vs. active ink layer split — same reason as NTA-73.
+  - [x] [NTA-75](https://sandeep12biswas.atlassian.net/browse/NTA-75) RAF batching for pointer-driven state updates
+  - [x] [NTA-76](https://sandeep12biswas.atlassian.net/browse/NTA-76) Virtualized segment rendering
+  - [ ] [NTA-77](https://sandeep12biswas.atlassian.net/browse/NTA-77) Per-plugin code-splitting — deferred as its own follow-up pass; `pnpm --filter desktop build` already shows the >500kB single-chunk warning this would address.
 
 ## Phase 10 — Cloud sync (build) ⚪ NOT STARTED
 

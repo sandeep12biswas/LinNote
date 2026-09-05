@@ -173,16 +173,34 @@ full `FileSystemPersistenceProvider` (tree/page/asset read-write, autosave).
   - NTA-71 ✅ Crash safety: write-to-temp-then-atomic-rename
   - NTA-72 ✅ schemaVersion + migration path for page/tree/plugin-settings
 
-## Phase 9 — Performance pass ⚪
+## Phase 9 — Performance pass 🟡
 
 Tiled canvases, virtualized panes/segments, per-plugin code-splitting.
 
-- **NTA-47** (Story) ⚪ — Phase 9: Performance pass
-  - NTA-73 ⚪ Tiled ink canvases: viewport-intersecting tiles only
-  - NTA-74 ⚪ Static vs. active ink layer split
-  - NTA-75 ⚪ RAF batching for pointer-driven state updates
-  - NTA-76 ⚪ Virtualized segment rendering
-  - NTA-77 ⚪ Per-plugin code-splitting
+- **NTA-47** (Story) 🟡 — Phase 9: Performance pass — **partial**, committed
+  on `feature/module-build` (2026-09-05, `51de215`): NTA-75/76 done; NTA-73/74
+  deferred until Ink (NTA-90) exists (nothing to tile/split-layer yet); NTA-77
+  deferred as its own follow-up pass. RAF batching (NTA-75):
+  `apps/desktop/src/canvas-core/coalescer.ts`'s `apply()` now runs on the next
+  animation frame instead of synchronously on every `update()` — a fast
+  pointermove stream collapses into one `apply()` per frame, using whichever
+  value was most recent when the frame fired. Virtualized segments (NTA-76):
+  `CanvasViewport.tsx` measures its render surface (`ResizeObserver`, same
+  technique as NTA-56's `useElementSize`) and derives a canvas-space
+  `visibleRect`; `SegmentLayerHost.tsx` filters against it via the new
+  `viewportCulling.ts` (400-unit overscan margin) — a segment far outside the
+  viewport unmounts from the DOM while its data stays untouched in
+  `useNotePageStore`. Also fixed a test-flakiness trap hit along the way:
+  jsdom's `pretendToBeVisual` mode runs its own real `requestAnimationFrame`
+  driver that can race vitest's fake-timer-patched one across sequential
+  tests in one file — `SegmentLayerHost.test.tsx` now stubs
+  `requestAnimationFrame`/`cancelAnimationFrame` directly rather than relying
+  on `vi.useFakeTimers()` for frame timing.
+  - NTA-73 ⚪ Tiled ink canvases: viewport-intersecting tiles only — deferred (needs Ink/NTA-90)
+  - NTA-74 ⚪ Static vs. active ink layer split — deferred (needs Ink/NTA-90)
+  - NTA-75 ✅ RAF batching for pointer-driven state updates
+  - NTA-76 ✅ Virtualized segment rendering
+  - NTA-77 ⚪ Per-plugin code-splitting — deferred, own follow-up pass
 
 ## Phase 10 — Cloud sync ⚪
 
@@ -248,8 +266,11 @@ what used to be gaps. Rough build order, with reasoning:
 4. ✅ Phase 5 — Remaining formatting plugins, build (NTA-44) — done.
 5. ✅ Phase 7 — Attachments & embeds, build (NTA-45) — done.
 6. ✅ Phase 8 — Undo/redo & full persistence (NTA-46) — done as of
-   2026-09-05. **Next up: Phase 9.**
-7. Phase 9 — Performance pass (NTA-47).
+   2026-09-05.
+7. 🟡 Phase 9 — Performance pass (NTA-47) — **partial** as of 2026-09-05:
+   NTA-75/76 done; NTA-73/74 wait on Ink (NTA-90), NTA-77 deferred as its own
+   pass. **Next up: Phase 10**, or Ink (NTA-90, not yet a scheduled phase)
+   if NTA-73/74 are picked up first instead.
 8. Phase 10 — Cloud sync, build (NTA-48).
 9. Phase 11 — Stretch (not scheduled, no Jira story — intentionally last).
 
