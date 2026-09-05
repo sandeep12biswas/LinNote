@@ -2,8 +2,10 @@
 
 This mirrors the phase breakdown in `docs/architecture.md` §9, cross-referenced
 against the actual state of Jira project **NTA** as of 2026-08-30, last
-updated 2026-09-05 (NTA-90/91/92/93 — Ink drawing — built; NTA-100/101 gap
-tickets filed — see the cross-cutting sections below). Update this file
+updated 2026-09-05 (NTA-90/91/92/93 — Ink drawing — built; NTA-73/74 —
+tiled ink rendering + static/active layer split — built; NTA-100 —
+"New Page" creation UI — built; NTA-101 gap ticket still open — see the
+cross-cutting sections below). Update this file
 whenever a phase's
 Jira mapping changes (a new Story is broken out, a phase's scope shifts) —
 it's the one place to see "what phase are we on and what's actually tracked
@@ -86,7 +88,7 @@ wires the tree data and real pane behavior.
   - NTA-55 ✅ Breadcrumb trail above the editor canvas — `apps/desktop/src/shell/BreadcrumbTrail.tsx`, `breadcrumb.ts`
   - NTA-56 ✅ Lazy loading + virtualized panes + incremental title/text search index — `apps/desktop/src/search/`, `apps/desktop/src/shell/useElementSize.ts`/`virtualization.ts`; only `WorkspaceNode.title` is indexed today, page content indexing is stubbed pending Phase 3/8
 
-### Cross-cutting — "New Page" creation UI ⚪
+### Cross-cutting — "New Page" creation UI ✅
 
 Gap found 2026-09-05 auditing Phase 2 at the user's request, after NTA-43
 was already Done. `createNode`/`CreateNodeCommand` are type-agnostic and
@@ -96,10 +98,26 @@ But no menu bar, toolbar, or context-menu action anywhere actually calls it
 with `type: "page"`: `FolderTreePane.tsx`'s right-click menu only wires up
 "New Folder", and `PageListPane.tsx` is read-only navigation (its own doc
 comment: "selecting a page is navigation state, not a plugin command").
-There is currently no way to create a page in the running app. Tracked as
-its own story rather than reopening NTA-43.
+There was no way to create a page in the running app. Tracked as its own
+story rather than reopening NTA-43; built 2026-09-05.
 
-- **NTA-100** (Story) ⚪ — "New Page" creation is missing from the UI
+- **NTA-100** (Story) ✅ — "New Page" creation is missing from the UI —
+  committed on `feature/module-build` (2026-09-05, `1fbf835`), PR
+  [#18](https://github.com/sandeep12biswas/LinNote/pull/18) (shared with
+  NTA-73/74, since both landed on the same branch). Two surfaces added,
+  both calling the same `createCreateNodeCommand({ parentId, type: "page",
+  title: "New Page" })` "New Folder" already used:
+  `FolderTreePane.tsx`'s right-click context menu (next to "New Folder" —
+  selects the folder and opens the new page immediately rather than an
+  inline rename, since a page isn't rendered in that tree, unlike a new
+  folder) and a new "New Page" toolbar button in `PageListPane.tsx`
+  (previously pure navigation with no store-mutation wiring at all)
+  targeting whichever folder it's already showing. New `.page-list-pane`
+  wrapper CSS in `App.css`. 8 new component tests
+  (`FolderTreePane.test.tsx`, `PageListPane.test.tsx` — neither pane had
+  one before this story); 306 passing in `apps/desktop` total (was 298);
+  `pnpm typecheck`/`pnpm lint:boundaries`/`pnpm --filter desktop build`
+  all green.
 
 ## Phase 3 — Core canvas 🟡
 
@@ -345,8 +363,11 @@ what used to be gaps. Rough build order, with reasoning:
    NTA-75/76/73/74 done; NTA-77 deferred as its own follow-up pass.
 8. ✅ **Cross-cutting — Ink drawing (NTA-90) — done as of 2026-09-05.**
    Unblocked NTA-73/74 (Phase 9, above), now also done.
-9. Phase 10 — Cloud sync, build (NTA-48).
-10. Phase 11 — Stretch (not scheduled, no Jira story — intentionally last).
+9. ✅ **Cross-cutting — "New Page" creation UI (NTA-100) — done as of
+   2026-09-05.** Gap found auditing Phase 2 (NTA-43) after it was already
+   Done; see this phase's own entry above.
+10. Phase 10 — Cloud sync, build (NTA-48).
+11. Phase 11 — Stretch (not scheduled, no Jira story — intentionally last).
 
 See `docs/task-list.md` for this same order as a single flat, checkable list
 across all Jira issues in the NTA project.

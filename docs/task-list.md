@@ -7,8 +7,10 @@ never drift for long; if they do, Jira is the source of truth and this file
 gets corrected.
 
 Built by cross-referencing three things as of **2026-08-30**, last updated
-**2026-09-05** (NTA-90/91/92/93 — Ink drawing — built; NTA-100/101 gap
-tickets added — see the cross-cutting sections below): the Notion "Desing architecture" (v2.2)
+**2026-09-05** (NTA-90/91/92/93 — Ink drawing — built; NTA-73/74 — tiled
+ink rendering + static/active layer split — built; NTA-100 — "New Page"
+creation UI — built; NTA-101 gap ticket still open — see the
+cross-cutting sections below): the Notion "Desing architecture" (v2.2)
 and "Plugins" (v1.1) pages, the actual code in this repo (`plugins/*`,
 `apps/desktop/src/*`), and every issue in Jira project NTA (NTA-1…NTA-101).
 See `docs/plan.md` for the narrative gap-analysis this list was generated
@@ -119,7 +121,7 @@ later phase from testing against a real notebook instead of a hardcoded page.
   - [x] [NTA-55](https://sandeep12biswas.atlassian.net/browse/NTA-55) Breadcrumb trail above the editor canvas
   - [x] [NTA-56](https://sandeep12biswas.atlassian.net/browse/NTA-56) Lazy loading + virtualized panes + incremental title/text search index
 
-## Cross-cutting — "New Page" creation UI ⚪ NOT STARTED
+## Cross-cutting — "New Page" creation UI ✅ DONE
 
 No menu bar, toolbar, or context-menu action anywhere calls
 `createCreateNodeCommand` with `type: "page"` — `FolderTreePane.tsx`'s
@@ -132,7 +134,7 @@ currently no way to create a page in the running app. Found 2026-09-05
 auditing Phase 2 for gaps at the user's request; NTA-43 itself stays
 Done, this is tracked separately since that story is already closed.
 
-- [ ] [NTA-100](https://sandeep12biswas.atlassian.net/browse/NTA-100) — "New Page" creation is missing from the UI
+- [x] [NTA-100](https://sandeep12biswas.atlassian.net/browse/NTA-100) — "New Page" creation is missing from the UI — done on `feature/module-build` (2026-09-05, commit `1fbf835`). Two surfaces added, both calling the same `createCreateNodeCommand({ parentId, type: "page", title: "New Page" })` "New Folder" already used: `FolderTreePane.tsx`'s right-click context menu (next to "New Folder" — selects the folder and opens the new page immediately instead of an inline rename, since a page isn't rendered in that tree) and a new "New Page" toolbar button in `PageListPane.tsx` (previously pure navigation with no store-mutation wiring at all) targeting whichever folder it's already showing. New `.page-list-pane` wrapper CSS in `App.css`. 8 new tests (`FolderTreePane.test.tsx`, `PageListPane.test.tsx` — neither pane had a component test before), 306 passing in `apps/desktop` total (was 298); `pnpm typecheck`/`pnpm lint:boundaries`/`pnpm --filter desktop build` all green. PR: https://github.com/sandeep12biswas/LinNote/pull/18 (shared with NTA-73/74, since both were built on the same `feature/module-build` branch).
 
 ## Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text ✅ DONE
 
