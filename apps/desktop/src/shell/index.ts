@@ -69,7 +69,7 @@
 // `SearchBox` (./SearchBox.tsx) + `./searchNavigation.ts` give the new
 // incremental search index (../search/) a place in the running app.
 
-import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
+import type { FileHandlerContribution, MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { RegisteredPlugin } from "../registry";
 
 /** Canonical left-to-right order of the app's top-level menus (docs/architecture.md §2). */
@@ -209,6 +209,37 @@ export function buildToolbar(registeredPlugins: RegisteredPlugin[]): ToolbarMode
 
 function toButtonModel(contribution: ToolbarContribution): ToolbarButtonModel {
   return { label: contribution.label, icon: contribution.icon, commandId: contribution.commandId };
+}
+
+/**
+ * NTA-65's `fileHandlers` extension-point plumbing — the base contribution
+ * surface a future per-extension preview/open plugin (e.g. an Office
+ * previewer) layers on top of `core.element.file-attachment` without
+ * modifying it (Desing architecture §10.1, §1.3's `fileHandlers` row).
+ * Same aggregate-active-plugins'-contributions shape as
+ * `buildMenuBar`/`buildToolbar` above, keyed by extension
+ * (case-insensitive) instead of grouped/sorted for display — a plugin's
+ * `commandId` is looked up on the shared `CommandBus` and run with the
+ * attachment as its argument by whichever active
+ * `core.element.file-attachment` render surface is asking (currently
+ * `apps/desktop/src/canvas-core/FileAttachmentHost.tsx`).
+ *
+ * First-registered wins on a duplicate extension (activation order,
+ * mirroring every other contribution's own tie-break here) — two plugins
+ * both claiming the same extension is a plugin-authoring conflict this
+ * function doesn't try to arbitrate further.
+ */
+export function buildFileHandlers(registeredPlugins: RegisteredPlugin[]): Map<string, FileHandlerContribution> {
+  const contributions = registeredPlugins
+    .filter((rp) => rp.state === "active")
+    .flatMap((rp) => rp.plugin.manifest.contributes.fileHandlers ?? []);
+
+  const byExtension = new Map<string, FileHandlerContribution>();
+  for (const contribution of contributions) {
+    const extension = contribution.extension.toLowerCase();
+    if (!byExtension.has(extension)) byExtension.set(extension, contribution);
+  }
+  return byExtension;
 }
 
 export { MenuBar } from "./MenuBar";

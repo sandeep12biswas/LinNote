@@ -1,5 +1,6 @@
 import { generateKeyBetween } from "fractional-indexing";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PersistenceProvider } from "../persistence";
 import type { WorkspaceNode } from "../types";
 import {
   TRASH_RETENTION_DAYS,
@@ -13,6 +14,7 @@ import {
   getRootNodes,
   getTrashedNodes,
   isSelfOrDescendant,
+  loadWorkspaceTree,
   moveNode,
   needsRebalance,
   purgeExpiredTrash,
@@ -22,8 +24,27 @@ import {
   renameNode,
   restoreNode,
   useWorkspaceTreeStore,
+  wireWorkspaceTreeAutosave,
 } from "./index";
 import { createSeedWorkspaceNodes } from "./mockData";
+
+/** A fake `PersistenceProvider` — only `readTree`/`writeTree` are exercised by this file's own tests, the rest just need to satisfy the type. */
+function makeFakePersistence(overrides: Partial<PersistenceProvider> = {}): PersistenceProvider {
+  return {
+    readTree: vi.fn(async () => []),
+    writeTree: vi.fn(async () => {}),
+    readPage: vi.fn(async () => {
+      throw new Error("not used by this test");
+    }),
+    writePage: vi.fn(async () => {}),
+    deletePage: vi.fn(async () => {}),
+    readAsset: vi.fn(async () => new Blob()),
+    writeAsset: vi.fn(async () => {}),
+    readPluginSettings: vi.fn(async () => ({})),
+    writePluginSettings: vi.fn(async () => {}),
+    ...overrides,
+  };
+}
 
 function makeNode(fields: Partial<WorkspaceNode> & Pick<WorkspaceNode, "id" | "parentId" | "type">): WorkspaceNode {
   return {
@@ -568,5 +589,101 @@ describe("useWorkspaceTreeStore", () => {
     );
     sweep({ now: farFuture });
     expect(getNode(useWorkspaceTreeStore.getState().nodes, created.id)).toBeUndefined();
+  });
+});
+
+describe("loadWorkspaceTree (NTA-69)", () => {
+  beforeEach(() => {
+    useWorkspaceTreeStore.setState({ nodes: [] });
+  });
+
+  it("loads the persisted tree into the store when one already exists", async () => {
+    const persisted = [makeNode({ id: "a", parentId: null, type: "notebook" })];
+    const persistence = makeFakePersistence({ readTree: vi.fn(async () => persisted) });
+
+    await loadWorkspaceTree(persistence);
+
+    expect(useWorkspaceTreeStore.getState().nodes).toEqual(persisted);
+    expect(persistence.writeTree).not.toHaveBeenCalled(); // nothing to seed — a real tree was found
+  });
+
+  it("seeds and persists the default notebook when no tree.json exists yet (fresh workspace)", async () => {
+    const persistence = makeFakePersistence({ readTree: vi.fn(async () => []) });
+
+    await loadWorkspaceTree(persistence);
+
+    expect(useWorkspaceTreeStore.getState().nodes.length).toBeGreaterThan(0);
+    expect(persistence.writeTree).toHaveBeenCalledWith(useWorkspaceTreeStore.getState().nodes);
+  });
+});
+
+describe("wireWorkspaceTreeAutosave (NTA-70)", () => {
+  beforeEach(() => {
+    useWorkspaceTreeStore.setState({ nodes: createSeedWorkspaceNodes() });
+  });
+
+  it("writes the tree immediately (not debounced) on every mutation", () => {
+    const persistence = makeFakePersistence();
+    const unsubscribe = wireWorkspaceTreeAutosave(persistence);
+    try {
+      useWorkspaceTreeStore.getState().createNode({ parentId: "notebook-1", type: "folder", title: "New" });
+
+      expect(persistence.writeTree).toHaveBeenCalledTimes(1);
+      expect(persistence.writeTree).toHaveBeenCalledWith(useWorkspaceTreeStore.getState().nodes);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("does nothing when unrelated store state changes without the nodes reference actually changing", () => {
+    const persistence = makeFakePersistence();
+    const unsubscribe = wireWorkspaceTreeAutosave(persistence);
+    try {
+      // Same array reference — simulates a subscriber firing on a change
+      // that isn't a tree mutation at all (defensive; this store doesn't
+      // have any other top-level field today).
+      useWorkspaceTreeStore.setState({ nodes: useWorkspaceTreeStore.getState().nodes });
+      expect(persistence.writeTree).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("stops writing after unsubscribing", () => {
+    const persistence = makeFakePersistence();
+    const unsubscribe = wireWorkspaceTreeAutosave(persistence);
+    unsubscribe();
+
+    useWorkspaceTreeStore.getState().createNode({ parentId: "notebook-1", type: "folder", title: "New" });
+
+    expect(persistence.writeTree).not.toHaveBeenCalled();
+  });
+
+  it("deletes a page's persisted content when it's permanently purged from trash", () => {
+    const persistence = makeFakePersistence();
+    const page = useWorkspaceTreeStore.getState().createNode({ parentId: "notebook-1", type: "page", title: "P" });
+    const unsubscribe = wireWorkspaceTreeAutosave(persistence);
+    try {
+      useWorkspaceTreeStore.getState().deleteNode(page.id); // soft-delete first — purgeNode requires it
+      expect(persistence.deletePage).not.toHaveBeenCalled(); // still restorable — content must survive
+
+      useWorkspaceTreeStore.getState().purgeNode(page.id);
+
+      expect(persistence.deletePage).toHaveBeenCalledWith(page.id);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("does not delete a page's content on an ordinary soft-delete (restorable, still in the tree)", () => {
+    const persistence = makeFakePersistence();
+    const page = useWorkspaceTreeStore.getState().createNode({ parentId: "notebook-1", type: "page", title: "P" });
+    const unsubscribe = wireWorkspaceTreeAutosave(persistence);
+    try {
+      useWorkspaceTreeStore.getState().deleteNode(page.id);
+      expect(persistence.deletePage).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+    }
   });
 });

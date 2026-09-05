@@ -2,7 +2,11 @@
 
 This mirrors the phase breakdown in `docs/architecture.md` §9, cross-referenced
 against the actual state of Jira project **NTA** as of 2026-08-30, last
-updated 2026-09-01 (Phase 2 completion). Update this file whenever a phase's
+updated 2026-09-05 (NTA-90/91/92/93 — Ink drawing — built; NTA-73/74 —
+tiled ink rendering + static/active layer split — built; NTA-100 —
+"New Page" creation UI — built; NTA-101 gap ticket still open — see the
+cross-cutting sections below). Update this file
+whenever a phase's
 Jira mapping changes (a new Story is broken out, a phase's scope shifts) —
 it's the one place to see "what phase are we on and what's actually tracked
 for it," rather than re-deriving it from the Jira backlog each time.
@@ -71,10 +75,10 @@ wires the tree data and real pane behavior.
   (`shell/index.ts`'s barrel exports, `shell/FolderTreePane.tsx`'s
   drag-and-drop rendering). Verified after all five landed: desktop
   typecheck clean, 173/173 desktop tests passing, `pnpm lint:boundaries`
-  clean. Jira still shows NTA-52…56 as "In Progress" (stale — set by an
-  earlier session's ticket-fetch step without the work being done at the
-  time) — left as-is per instruction, not yet reconciled with the actual
-  Done state of the code.
+  clean. PR [#16](https://github.com/sandeep12biswas/LinNote/pull/16)
+  (`feature/module-build` → `develop`) opened covering all 5 subtasks;
+  NTA-43/52/53/54/55/56 each got a summary comment and were transitioned
+  to Done in Jira.
   - NTA-49 ✅ WorkspaceNode tree data model + id-based flat storage — `apps/desktop/src/workspace/`
   - NTA-50 ✅ Folder Tree pane: render folder/notebook nodes, expand/collapse, drag-to-reparent — `apps/desktop/src/shell/FolderTreePane.tsx`
   - NTA-51 ✅ Page List pane: list pages for selected folder, nested subpages, highlight open page — `apps/desktop/src/shell/PageListPane.tsx`
@@ -83,6 +87,37 @@ wires the tree data and real pane behavior.
   - NTA-54 ✅ Soft-delete trash + cascade delete for folders/notebooks — `apps/desktop/src/shell/TrashPane.tsx`, `apps/desktop/src/workspace/index.ts`'s trash lifecycle functions
   - NTA-55 ✅ Breadcrumb trail above the editor canvas — `apps/desktop/src/shell/BreadcrumbTrail.tsx`, `breadcrumb.ts`
   - NTA-56 ✅ Lazy loading + virtualized panes + incremental title/text search index — `apps/desktop/src/search/`, `apps/desktop/src/shell/useElementSize.ts`/`virtualization.ts`; only `WorkspaceNode.title` is indexed today, page content indexing is stubbed pending Phase 3/8
+
+### Cross-cutting — "New Page" creation UI ✅
+
+Gap found 2026-09-05 auditing Phase 2 at the user's request, after NTA-43
+was already Done. `createNode`/`CreateNodeCommand` are type-agnostic and
+`NodeType` already includes `"page"` — undo/redo, autosave, and
+`tree.json`/`pages/<id>.json` persistence all handle page nodes correctly.
+But no menu bar, toolbar, or context-menu action anywhere actually calls it
+with `type: "page"`: `FolderTreePane.tsx`'s right-click menu only wires up
+"New Folder", and `PageListPane.tsx` is read-only navigation (its own doc
+comment: "selecting a page is navigation state, not a plugin command").
+There was no way to create a page in the running app. Tracked as its own
+story rather than reopening NTA-43; built 2026-09-05.
+
+- **NTA-100** (Story) ✅ — "New Page" creation is missing from the UI —
+  committed on `feature/module-build` (2026-09-05, `1fbf835`), PR
+  [#18](https://github.com/sandeep12biswas/LinNote/pull/18) (shared with
+  NTA-73/74, since both landed on the same branch). Two surfaces added,
+  both calling the same `createCreateNodeCommand({ parentId, type: "page",
+  title: "New Page" })` "New Folder" already used:
+  `FolderTreePane.tsx`'s right-click context menu (next to "New Folder" —
+  selects the folder and opens the new page immediately rather than an
+  inline rename, since a page isn't rendered in that tree, unlike a new
+  folder) and a new "New Page" toolbar button in `PageListPane.tsx`
+  (previously pure navigation with no store-mutation wiring at all)
+  targeting whichever folder it's already showing. New `.page-list-pane`
+  wrapper CSS in `App.css`. 8 new component tests
+  (`FolderTreePane.test.tsx`, `PageListPane.test.tsx` — neither pane had
+  one before this story); 306 passing in `apps/desktop` total (was 298);
+  `pnpm typecheck`/`pnpm lint:boundaries`/`pnpm --filter desktop build`
+  all green.
 
 ## Phase 3 — Core canvas 🟡
 
@@ -109,6 +144,34 @@ formatting plugins (bold, italic, headers) made real.
   - NTA-40 ⚪ Segment block: auto-grow height & manual-resize width with reflow
   - NTA-42 ⚪ Wire real bold/italic/header formatting commands into segments
 
+### Cross-cutting — Ink drawing (core.element.ink) ✅
+
+Named in this doc's own §5 with a working design from the start, but
+never itself scheduled into a phase — Phase 3's own description says
+"viewport transform, ink element type, page header/background," but the
+NTA-32 story actually created for Phase 3 only covered viewport/header/
+background/segments. Added 2026-09-01 to close that gap; built
+2026-09-05.
+
+- **NTA-90** (Story) ✅ — core.element.ink: freehand pointer-capture
+  drawing (perfect-freehand + eraser) — committed on `feature/module-build`
+  (2026-09-05, `dccdc26`). Pointer capture → `perfect-freehand` tapered
+  outline → `Path2D` paint on one bounds-fitted `<canvas>` (single-canvas;
+  tiling is NTA-73/74's later optimization); a `createPortal`-rendered
+  floating tool panel (pen/highlighter/eraser + color/size), sticky
+  selection; both stroke-commit and erase wired into the real undo stack
+  (Phase 8/NTA-46 exists now, updating this story's own originally-stale
+  "not in scope" note). Two real bugs found and fixed by actually driving
+  the app end-to-end via the `run-desktop` skill: eraser hit-testing only
+  checked distance to sampled points, not the segments between them (a
+  sparse pointermove stream left gaps); and pan wasn't actually suppressed
+  for the drag that armed it (the same NTA-38 event-ordering timing issue
+  `SegmentLayer.tsx` already documents). Unblocked NTA-73/74 (Phase 9),
+  now built — see that phase's own entry below.
+  - NTA-91 ✅ Stroke capture & rendering: pointer capture, perfect-freehand outline, Path2D paint
+  - NTA-92 ✅ Tool selection: pen/highlighter/eraser modes, color & size, toolbar-armed draw gesture
+  - NTA-93 ✅ Eraser: whole-stroke and pixel/segment erase modes
+
 ## Phase 5 — Remaining formatting plugins ⚪
 
 Font color (+ contrast), font size, bullet list, checkbox list, alignment —
@@ -129,43 +192,91 @@ Non-overlap, block-and-snap.
 - **NTA-32** (Story) 🟡 — continued:
   - NTA-41 ⚪ Segment block: non-overlap (block-and-snap)
 
-## Phase 7 — Attachments & embeds ⚪
+## Phase 7 — Attachments & embeds ✅
 
 Real file-attachment (open in OS-default app) and YouTube-embed
 (inline vs. external playback prompt) behavior, beyond the stub activation in
-NTA-28/29.
+NTA-28/29 (closed out by this same real build, per the same pattern
+NTA-21/26 already established for headers/text-segment).
 
-- **NTA-45** (Story) ⚪ — Phase 7: Attachments & embeds (build)
-  - NTA-62 ⚪ core.element.file-attachment: data model + icon/filename renderer + open externally
-  - NTA-63 ⚪ core.element.youtube-embed: data model + inline sandboxed player
-  - NTA-64 ⚪ YouTube insert-time prompt: "Play here" vs "Open in browser"
-  - NTA-65 ⚪ fileHandlers extension point plumbing
+- **NTA-45** (Story) ✅ — Phase 7: Attachments & embeds (build) — merged into
+  `feature/module-build` 2026-09-05, transitioned to Done in Jira with a
+  summary comment (commit 2682b27). `@tauri-apps/plugin-dialog` added as a
+  new standard Tauri plugin (npm + Cargo + capability) for a real native
+  file picker on "Insert File Attachment" — confirmed with the user first,
+  since it wasn't an explicit subtask. `tauri.conf.json`'s `shell.open`
+  needed a custom validation regex too — its default only allows
+  mailto/tel/http(s) links, which would have silently rejected every local
+  file path `core.element.file-attachment`'s "open externally" needs to
+  open.
+  - NTA-62 ✅ core.element.file-attachment: data model + icon/filename renderer + open externally
+  - NTA-63 ✅ core.element.youtube-embed: data model + inline sandboxed player
+  - NTA-64 ✅ YouTube insert-time prompt: "Play here" vs "Open in browser"
+  - NTA-65 ✅ fileHandlers extension point plumbing
 
-## Phase 8 — Undo/redo, model & persistence ⚪
+## Phase 8 — Undo/redo, model & persistence ✅
 
 Unified canvas command stack, structural (workspace tree) command stack,
 full `FileSystemPersistenceProvider` (tree/page/asset read-write, autosave).
-Only the plugin-settings slice (NTA-14) exists so far.
 
-- **NTA-46** (Story) ⚪ — Phase 8: Undo/redo, model & persistence
-  - NTA-66 ⚪ Command interface + one undo/redo stack per open page across all plugins
-  - NTA-67 ⚪ Gesture coalescing for fast-repeating actions
-  - NTA-68 ⚪ Stack cap + diff-based commands
-  - NTA-69 ⚪ FileSystemPersistenceProvider: tree/page/asset read-write
-  - NTA-70 ⚪ Autosave: debounced canvas edits + hard flush on close
-  - NTA-71 ⚪ Crash safety: write-to-temp-then-atomic-rename
-  - NTA-72 ⚪ schemaVersion + migration path for page/tree/plugin-settings
+- **NTA-46** (Story) ✅ — Phase 8: Undo/redo, model & persistence — two
+  commits on `feature/module-build` (2026-09-05): Pass 1 (NTA-66/67/68,
+  `4c3b713`) the canvas command stack + gesture coalescing; Pass 2
+  (NTA-69/70/71/72, `b38c744`) real persistence. Workspace root decided
+  with the user: `Documents/LinNote/` (never specified in this doc
+  before — a real gap, not an oversight, this phase closed). 5 real bugs
+  found and fixed by actually driving the app end-to-end via the
+  `run-desktop` skill rather than stopping at unit tests — see NTA-46's
+  Jira comments for the full list.
+  - NTA-66 ✅ Command interface + one undo/redo stack per open page across all plugins
+  - NTA-67 ✅ Gesture coalescing for fast-repeating actions
+  - NTA-68 ✅ Stack cap + diff-based commands
+  - NTA-69 ✅ FileSystemPersistenceProvider: tree/page/asset read-write
+  - NTA-70 ✅ Autosave: debounced canvas edits + hard flush on close
+  - NTA-71 ✅ Crash safety: write-to-temp-then-atomic-rename
+  - NTA-72 ✅ schemaVersion + migration path for page/tree/plugin-settings
 
-## Phase 9 — Performance pass ⚪
+## Phase 9 — Performance pass 🟡
 
 Tiled canvases, virtualized panes/segments, per-plugin code-splitting.
 
-- **NTA-47** (Story) ⚪ — Phase 9: Performance pass
-  - NTA-73 ⚪ Tiled ink canvases: viewport-intersecting tiles only
-  - NTA-74 ⚪ Static vs. active ink layer split
-  - NTA-75 ⚪ RAF batching for pointer-driven state updates
-  - NTA-76 ⚪ Virtualized segment rendering
-  - NTA-77 ⚪ Per-plugin code-splitting
+- **NTA-47** (Story) 🟡 — Phase 9: Performance pass — **partial**, committed
+  on `feature/module-build` (2026-09-05, `51de215` then a later commit for
+  NTA-73/74): NTA-75/76/73/74 done; NTA-77 deferred as its own follow-up
+  pass, so the phase itself stays open. RAF batching (NTA-75):
+  `apps/desktop/src/canvas-core/coalescer.ts`'s `apply()` now runs on the next
+  animation frame instead of synchronously on every `update()` — a fast
+  pointermove stream collapses into one `apply()` per frame, using whichever
+  value was most recent when the frame fired. Virtualized segments (NTA-76):
+  `CanvasViewport.tsx` measures its render surface (`ResizeObserver`, same
+  technique as NTA-56's `useElementSize`) and derives a canvas-space
+  `visibleRect`; `SegmentLayerHost.tsx` filters against it via the new
+  `viewportCulling.ts` (400-unit overscan margin) — a segment far outside the
+  viewport unmounts from the DOM while its data stays untouched in
+  `useNotePageStore`. Also fixed a test-flakiness trap hit along the way:
+  jsdom's `pretendToBeVisual` mode runs its own real `requestAnimationFrame`
+  driver that can race vitest's fake-timer-patched one across sequential
+  tests in one file — `SegmentLayerHost.test.tsx` now stubs
+  `requestAnimationFrame`/`cancelAnimationFrame` directly rather than relying
+  on `vi.useFakeTimers()` for frame timing. Tiled ink rendering +
+  static/active split (NTA-73/74): `plugins/element-ink/src/ink.ts`'s
+  `computeVisibleTiles` divides canvas-space into a fixed 1024-unit grid
+  (`INK_TILE_SIZE`) and keeps only the tiles intersecting the host's
+  `visibleRect` expanded by a 512-unit `INK_TILE_OVERSCAN` (same
+  don't-unmount-at-the-edge reasoning as NTA-76's own overscan margin) —
+  each mounts its own `<canvas>` (`InkLayer.tsx`'s `memo`-wrapped
+  `InkTileCanvas`), painting only the committed strokes
+  `bucketStrokesByTile` says intersect it. The in-progress pen/highlighter
+  stroke paints onto its own small overlay canvas instead, sized to just
+  its own bounds and repainted every `pointermove` — committed tiles never
+  redraw while it's live. The eraser's live preview wasn't given its own
+  overlay (neither ticket asked for it); the same `memo` comparison still
+  keeps it from repainting any tile its working set doesn't actually touch.
+  - NTA-73 ✅ Tiled ink canvases: viewport-intersecting tiles only
+  - NTA-74 ✅ Static vs. active ink layer split
+  - NTA-75 ✅ RAF batching for pointer-driven state updates
+  - NTA-76 ✅ Virtualized segment rendering
+  - NTA-77 ⚪ Per-plugin code-splitting — deferred, own follow-up pass
 
 ## Phase 10 — Cloud sync ⚪
 
@@ -180,6 +291,22 @@ conflict-copy handling — beyond the stub activation in NTA-30/31.
   - NTA-82 ⚪ Conflict handling: last-write-wins + retained conflict copy
   - NTA-83 ⚪ "Edited elsewhere" warning banner on page open
   - NTA-84 ⚪ Settings panel: enable OneDrive / Google Drive independently
+
+## Cross-cutting — Error logging ⚪
+
+Gap found 2026-09-05 auditing the codebase for build gaps at the user's
+request. There is no centralized/formal logging subsystem — only 9
+scattered `console.error`/`console.warn` call sites (`canvas-core/`,
+`App.tsx`, `persistence/autosave.ts`, `workspace/index.ts`,
+`registry/createContext.ts`), each inventing its own bracketed tag
+(`[autosave]`, `[canvas-core]`, ...) by convention only, with no shared
+level, structured context, persistence, or user-facing surface — an error
+is visible today only if a user happens to have devtools open.
+`docs/architecture.md` never named a logging phase or plugin, so this
+isn't a documented gap in an existing story — it had never been tracked
+before now.
+
+- **NTA-101** (Story) ⚪ — Formal error logging — no centralized logging subsystem exists
 
 ## Phase 11 — Stretch ⚪
 
@@ -226,14 +353,21 @@ what used to be gaps. Rough build order, with reasoning:
    one at a time). Real Folder Tree / Page List data, undo, ordering, trash,
    breadcrumbs, and a search index all exist now — nothing below has to test
    against a hardcoded stub page anymore.
-3. Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text
-   (NTA-32) — each sub-piece builds directly on the last. **Next up.**
-4. Phase 5 — Remaining formatting plugins, build (NTA-44).
-5. Phase 7 — Attachments & embeds, build (NTA-45).
-6. Phase 8 — Undo/redo & full persistence (NTA-46).
-7. Phase 9 — Performance pass (NTA-47).
-8. Phase 10 — Cloud sync, build (NTA-48).
-9. Phase 11 — Stretch (not scheduled, no Jira story — intentionally last).
+3. ✅ Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text
+   (NTA-32) — done; each sub-piece built directly on the last.
+4. ✅ Phase 5 — Remaining formatting plugins, build (NTA-44) — done.
+5. ✅ Phase 7 — Attachments & embeds, build (NTA-45) — done.
+6. ✅ Phase 8 — Undo/redo & full persistence (NTA-46) — done as of
+   2026-09-05.
+7. 🟡 Phase 9 — Performance pass (NTA-47) — **partial** as of 2026-09-05:
+   NTA-75/76/73/74 done; NTA-77 deferred as its own follow-up pass.
+8. ✅ **Cross-cutting — Ink drawing (NTA-90) — done as of 2026-09-05.**
+   Unblocked NTA-73/74 (Phase 9, above), now also done.
+9. ✅ **Cross-cutting — "New Page" creation UI (NTA-100) — done as of
+   2026-09-05.** Gap found auditing Phase 2 (NTA-43) after it was already
+   Done; see this phase's own entry above.
+10. Phase 10 — Cloud sync, build (NTA-48).
+11. Phase 11 — Stretch (not scheduled, no Jira story — intentionally last).
 
 See `docs/task-list.md` for this same order as a single flat, checkable list
-across all 84 issues.
+across all Jira issues in the NTA project.

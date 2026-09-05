@@ -3,8 +3,7 @@
 // List / Editor Canvas three-pane split filling the rest of the window.
 // Wraps `MenuBar` (./MenuBar.tsx) and `Toolbar` (./Toolbar.tsx) around
 // the panes. "Window scope (decided)" per §2: single page open at a
-// time, no tab strip, no multi-window model — the Editor Canvas pane
-// below is still a single static placeholder, not a tab strip.
+// time, no tab strip, no multi-window model.
 //
 // NTA-15 (integration): `registeredPlugins`/`onRunCommand` now come from a
 // real, activated `PluginRegistry` (../App.tsx owns building it) instead
@@ -17,14 +16,12 @@
 // NTA-49/50/51 replace what used to be static Folder Tree / Page List
 // placeholder panes with `FolderTreePane`/`PageListPane`
 // (./FolderTreePane.tsx, ./PageListPane.tsx), backed by the in-memory
-// `WorkspaceNode` tree store (../workspace/). The Editor Canvas pane
-// itself is still Phase 3 (NTA-32) — not this ticket.
+// `WorkspaceNode` tree store (../workspace/).
 //
 // NTA-55 adds `BreadcrumbTrail` (./BreadcrumbTrail.tsx) above the Editor
-// Canvas pane's own placeholder content — "notebook > folder > ... >
-// page" for whichever page is currently open (../store's `activePageId`),
-// each segment clickable. It renders nothing when no page is open; the
-// canvas region itself is still the Phase 3 (NTA-32) placeholder.
+// Canvas pane's own content — "notebook > folder > ... > page" for
+// whichever page is currently open (../store's `activePageId`), each
+// segment clickable. It renders nothing when no page is open.
 //
 // NTA-54: a "Trash" toggle next to the Folder Tree pane's label opens
 // `TrashPane` (./TrashPane.tsx) as an overlay above the pane split —
@@ -35,8 +32,71 @@
 // rendering internally (see their own doc comments); `SearchBox`
 // (./SearchBox.tsx) is new here, giving the incremental search index
 // (../search/) a place in the running app.
+//
+// NTA-33 mounts `CanvasViewport` (../canvas-core/) into the Editor Canvas
+// pane once a page is open (`useNavigationStore`'s `activePageId`),
+// replacing the static placeholder that was there since NTA-13; falls
+// back to the placeholder when no page is open.
+//
+// NTA-37 mounts `SegmentLayerHost` (../canvas-core/SegmentLayerHost.tsx)
+// as `CanvasViewport`'s `children` — the segment-block renderer and
+// invisible create-on-type gesture, panning/scaling with the page's
+// other content.
+//
+// NTA-34 mounts `PageHeader` (../canvas-core/PageHeader.tsx) as
+// `CanvasViewport`'s `header` prop — title/date/alignment, fixed on
+// screen outside the pan/zoom transform.
+//
+// NTA-35 mounts `BackgroundPicker` (../canvas-core/BackgroundPicker.tsx)
+// alongside `PageHeader` in that same `header` slot — the page
+// background color picker + auto-contrast suggestion.
+//
+// NTA-38 threads `commandBus` down to `SegmentLayerHost` alongside
+// `pageId` — it needs direct `register`/`unregister` access (not just
+// the `onRunCommand` wrapper every other click handler here uses) to
+// install a real, page-aware handler for the "Add Segment" toolbar/menu
+// command; see that file's and ../registry/createContext.ts's header
+// comments.
+//
+// NTA-57 mounts `FontColorHost` (../canvas-core/FontColorHost.tsx) the
+// same CommandBus-overwrite way, alongside (not inside) `CanvasViewport`
+// — it renders nothing, so it doesn't need to be inside the pan/zoom
+// transform the way `SegmentLayerHost` does.
+//
+// NTA-62/63/64 mount `FileAttachmentHost`/`YouTubeEmbedHost`
+// (../canvas-core/FileAttachmentHost.tsx, ../canvas-core/
+// YouTubeEmbedHost.tsx) as more of `CanvasViewport`'s `children`,
+// alongside `SegmentLayerHost` — same renderer-plus-CommandBus-overwrite
+// role, panning/scaling with the page's other content.
+// `FileAttachmentHost` also takes `registeredPlugins`, which it needs
+// for NTA-65's `fileHandlers` lookup (../shell/index.ts's
+// `buildFileHandlers`) — the same list already threaded into
+// `buildMenuBar`/`buildToolbar` above.
+//
+// NTA-66 (Phase 8) mounts `CanvasUndoRedoControls`
+// (../canvas-core/CanvasUndoRedoControls.tsx) next to `BreadcrumbTrail`
+// — outside `CanvasViewport`'s pan/zoom transform (it's UI chrome, not
+// page content), same reasoning as `PageHeader`/`BackgroundPicker` living
+// in the `header` slot rather than `children`.
+//
+// NTA-90/91/92/93 mounts `InkLayerHost` (../canvas-core/InkLayerHost.tsx)
+// as another of `CanvasViewport`'s `children`, alongside
+// `SegmentLayerHost` — same renderer-plus-CommandBus-overwrite role,
+// panning/scaling with the page's other content.
 
 import { useState } from "react";
+import {
+  BackgroundPicker,
+  CanvasUndoRedoControls,
+  CanvasViewport,
+  FileAttachmentHost,
+  FontColorHost,
+  InkLayerHost,
+  PageHeader,
+  SegmentLayerHost,
+  YouTubeEmbedHost,
+} from "../canvas-core";
+import { useNavigationStore } from "../store";
 import { buildMenuBar, buildToolbar } from "./index";
 import { MenuBar } from "./MenuBar";
 import { Toolbar } from "./Toolbar";
@@ -46,17 +106,19 @@ import { PageListPane } from "./PageListPane";
 import { BreadcrumbTrail } from "./BreadcrumbTrail";
 import { TrashPane } from "./TrashPane";
 import { SearchBox } from "./SearchBox";
-import type { RegisteredPlugin } from "../registry";
+import type { CommandBus, RegisteredPlugin } from "../registry";
 
 export interface AppShellProps {
   registeredPlugins: RegisteredPlugin[];
   onRunCommand: (commandId: string) => void;
+  commandBus: CommandBus;
 }
 
-export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
+export function AppShell({ registeredPlugins, onRunCommand, commandBus }: AppShellProps) {
   const menuBarModel = buildMenuBar(registeredPlugins);
   const toolbarModel = buildToolbar(registeredPlugins);
   const [trashOpen, setTrashOpen] = useState(false);
+  const activePageId = useNavigationStore((state) => state.activePageId);
 
   return (
     <div className="app-shell">
@@ -79,7 +141,28 @@ export function AppShell({ registeredPlugins, onRunCommand }: AppShellProps) {
         </section>
         <section className="app-shell__pane app-shell__pane--editor-canvas" aria-label="Editor Canvas">
           <BreadcrumbTrail />
-          <h2 className="app-shell__pane-label">Editor Canvas</h2>
+          {activePageId ? (
+            <>
+              <CanvasUndoRedoControls />
+              <FontColorHost pageId={activePageId} commandBus={commandBus} />
+              <CanvasViewport
+                pageId={activePageId}
+                header={
+                  <>
+                    <PageHeader pageId={activePageId} />
+                    <BackgroundPicker pageId={activePageId} />
+                  </>
+                }
+              >
+                <SegmentLayerHost pageId={activePageId} commandBus={commandBus} />
+                <FileAttachmentHost pageId={activePageId} commandBus={commandBus} registeredPlugins={registeredPlugins} />
+                <YouTubeEmbedHost pageId={activePageId} commandBus={commandBus} />
+                <InkLayerHost pageId={activePageId} commandBus={commandBus} />
+              </CanvasViewport>
+            </>
+          ) : (
+            <h2 className="app-shell__pane-label">Editor Canvas</h2>
+          )}
         </section>
       </div>
       <PluginsStatusPanel registeredPlugins={registeredPlugins} />

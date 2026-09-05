@@ -239,6 +239,392 @@ button {
 
 .app-shell__pane--editor-canvas {
   flex: 1 1 auto;
+  /* The pan/zoom surface manages its own scroll/clipping (NTA-33) — the
+     pane itself must not also scroll/pad, or dragging fights the pane's
+     native scrollbars. */
+  overflow: hidden;
+  padding: 0;
+}
+
+/* ---- Canvas viewport: pan/zoom render surface (NTA-33, docs/architecture.md §5) ---- */
+
+.canvas-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* Pointer-drag pan owns touch input here — don't let the WebView
+     interpret a drag as a native touch-scroll/pinch gesture instead. */
+  touch-action: none;
+  cursor: grab;
+}
+
+.canvas-viewport:active {
+  cursor: grabbing;
+}
+
+.canvas-viewport__transform {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+/* ---- Page header (NTA-34) ---- */
+
+.page-header {
+  position: relative;
+  z-index: 1; /* stays above the pan/zoom-transformed layer beneath it */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 20px 8px;
+}
+
+.page-header--left {
+  align-items: flex-start;
+}
+
+.page-header--center {
+  align-items: center;
+}
+
+.page-header--right {
+  align-items: flex-end;
+}
+
+.page-header__title {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 1.6em;
+  font-weight: 600;
+  outline: none;
+}
+
+.page-header--center .page-header__title {
+  text-align: center;
+}
+
+.page-header--right .page-header__title {
+  text-align: right;
+}
+
+.page-header__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+.page-header__align {
+  display: flex;
+  gap: 2px;
+}
+
+.page-header__align-button {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.page-header__align-button--active {
+  border-color: currentColor;
+}
+
+/* ---- Background picker (NTA-35) ---- */
+
+.background-picker {
+  position: relative;
+  z-index: 1; /* stays above the pan/zoom-transformed layer beneath it, same as .page-header */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 20px 12px;
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
+.background-picker__swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+}
+
+/* ---- Segment blocks (NTA-37) ----
+   `.segment-layer` itself has no explicit size (content-sized like its
+   `.canvas-viewport__transform` parent), so empty canvas space simply
+   falls through to it for pointer-drag panning — only an actual
+   `.segment-block` needs to opt out of that, via its own
+   onPointerDown/stopPropagation (SegmentLayer.tsx). */
+
+.segment-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.segment-block {
+  position: absolute;
+  min-width: 40px;
+  min-height: 1.6em;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  /* The border/padding area is the drag handle (NTA-39) — "move" here,
+     overridden back to "text" over the actual editable content below. */
+  cursor: move;
+}
+
+/* Invisible by default (NTA-37) — border only on hover/while editing.
+   `--visible` (NTA-38's deliberate creation) always shows it. */
+.segment-block--invisible:hover,
+.segment-block--invisible:focus-within {
+  border-color: rgba(15, 15, 15, 0.35);
+}
+
+.segment-block--visible {
+  border-color: rgba(15, 15, 15, 0.35);
+}
+
+.segment-block .ProseMirror {
+  outline: none;
+  min-height: 1.4em;
+  cursor: text;
+}
+
+/* Manual-resize width handles (NTA-40) — thin invisible strips anchored
+   to `.segment-block`'s own `position: absolute` (their nearest
+   positioned ancestor), one on each edge. `min-width: 40px` above must
+   match `MIN_SEGMENT_WIDTH` in SegmentLayer.tsx. */
+.segment-block__resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.segment-block__resize-handle--left {
+  left: -3px;
+}
+
+.segment-block__resize-handle--right {
+  right: -3px;
+}
+
+/* ---- File attachment blocks (NTA-62) ----
+   Same absolute-positioned, whole-block-is-the-drag-handle shape as
+   `.segment-block`, minus the resize handles/text-content carve-out
+   (drag-to-move only, NTA-45's confirmed scope). */
+
+.file-attachment-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.file-attachment-block {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid rgba(15, 15, 15, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  cursor: move;
+  overflow: hidden;
+}
+
+.file-attachment-block__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgba(15, 15, 15, 0.08);
+  font-size: 0.7em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.file-attachment-block__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- YouTube embed blocks (NTA-63/64) ----
+   `__handle` is the drag target — the iframe/thumbnail body below it
+   needs real pointer events for its own playback controls, so (unlike
+   `.file-attachment-block`) the drag surface is a thin strip, not the
+   whole block. */
+
+.youtube-embed-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.youtube-embed-block {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(15, 15, 15, 0.2);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+}
+
+.youtube-embed-block__handle {
+  flex-shrink: 0;
+  height: 14px;
+  cursor: move;
+  background: rgba(15, 15, 15, 0.08);
+}
+
+.youtube-embed-block__frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+}
+
+.youtube-embed-block__external {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.youtube-embed-block__thumbnail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.youtube-embed-block__external button {
+  position: relative;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+}
+
+.youtube-embed-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+}
+
+.youtube-embed-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 320px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f0f0f;
+}
+
+.youtube-embed-dialog__error {
+  margin: 0;
+  color: #c0392b;
+  font-size: 0.85em;
+}
+
+.youtube-embed-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ---- Ink (NTA-90/91/92/93) ----
+   `.ink-layer__canvas` is sized/positioned to whatever
+   `computeStrokesBounds` (plugins/element-ink/src/ink.ts) says — no
+   fixed intrinsic size, unlike a segment/attachment block. `pointer-
+   events: none` since drawing/erasing is captured window-scoped
+   (InkLayer.tsx's own header comment), not via this element directly —
+   it only ever needs to be *visible*, never clickable. `.ink-tool-panel`
+   is rendered via `createPortal` to `document.body` (InkLayer.tsx), the
+   same fix `.youtube-embed-dialog` above already needed (NTA-64) for a
+   `position: fixed` element nested inside CanvasViewport's pan/zoom
+   transform. */
+
+.ink-layer__canvas {
+  position: absolute;
+  pointer-events: none;
+}
+
+.ink-tool-panel {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f0f0f;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+}
+
+.ink-tool-panel__tools {
+  display: flex;
+  gap: 4px;
+}
+
+.ink-tool-panel__tool {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(15, 15, 15, 0.2);
+  background: #f5f5f5;
+  cursor: pointer;
+}
+
+.ink-tool-panel__tool.is-active {
+  border-color: #1a1a1a;
+  background: #e0e0e0;
+}
+
+.ink-tool-panel__options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9em;
+}
+
+.ink-tool-panel__done {
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(15, 15, 15, 0.2);
+  background: #f5f5f5;
+  cursor: pointer;
 }
 
 .app-shell--loading {
@@ -275,6 +661,24 @@ button {
   cursor: default;
 }
 
+/* NTA-66 — canvas command stack's own Undo/Redo, mirroring
+   .folder-tree__undo-bar's styling for the structural stack. */
+.canvas-undo-redo {
+  display: flex;
+  gap: 0.4em;
+  padding: 0.3em 0;
+}
+
+.canvas-undo-redo button {
+  font-size: 0.8em;
+  padding: 0.2em 0.6em;
+}
+
+.canvas-undo-redo button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* NTA-56: `.folder-tree`/`.folder-tree__viewport`/`.page-list__viewport`
    must each fill the vertical space their parent gives them (rather than
    sizing to content, as before) — `react-window`'s `FixedSizeList` needs
@@ -291,6 +695,27 @@ button {
 .page-list__viewport {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* NTA-100: PageListPane.tsx's own root, mirroring .folder-tree's role —
+   a flex column filling the pane, with a fixed-height toolbar row above
+   the (flex-grow) list/empty-state, same shape as
+   .folder-tree__undo-bar's own header row above .folder-tree__viewport. */
+.page-list-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.page-list-pane__toolbar {
+  margin-bottom: 0.4em;
+}
+
+.page-list-pane__new-page {
+  width: 100%;
+  font-size: 0.8em;
+  padding: 0.2em 0.4em;
 }
 
 .folder-tree__row {

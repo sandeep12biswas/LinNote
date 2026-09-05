@@ -7,6 +7,9 @@
     "core:default",
     "opener:default",
     "fs:default",
-    "shell:default"
+    "fs:allow-document-read-recursive",
+    "fs:allow-document-write-recursive",
+    "shell:default",
+    "dialog:default"
   ]
 }

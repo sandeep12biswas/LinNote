@@ -47,8 +47,19 @@ export interface SyncProviderContribution {
 }
 
 export interface FileHandlerContribution {
-  extension: string; // e.g. "docx"
-  // TODO(phase-7): preview/open handler layered on core.element.file-attachment.
+  extension: string; // e.g. "docx" — matched case-insensitively against FileAttachment.extension
+  label: string; // e.g. "Preview with Office" — shown in a future "Open with" UI
+  /**
+   * Looked up on the shared `CommandBus` (../registry/createContext.ts,
+   * threaded through the same commandId indirection `MenuContribution`/
+   * `ToolbarContribution` already use, not an inline function) and run
+   * with the attachment as its argument in place of core.element.
+   * file-attachment's own default "open externally" behavior (NTA-45,
+   * §10.1) — lets a future plugin (e.g. an Office previewer) layer a
+   * per-extension handler on top of core.element.file-attachment without
+   * modifying it.
+   */
+  commandId: string;
 }
 
 export interface SettingsPanelContribution {

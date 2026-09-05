@@ -247,25 +247,81 @@ concerns with no dependency between them.
   `contrast-util`), `format-font-size`, `format-headers` (H1-H3),
   `format-bullet-list`, `format-checkbox-list`, `format-alignment`.
 - **Ink** (`plugins/element-ink`, `core.element.ink`): pointer capture →
-  `perfect-freehand` tapered outline → `Path2D` paint on a per-tile
-  `<canvas>`. Eraser is whole-stroke or pixel/segment, both undoable.
-  `touch-action: none` is required so WebView2/WKWebView doesn't steal
-  pen/touch input.
+  `perfect-freehand` tapered outline → `Path2D` paint, tiled per-
+  viewport-region (NTA-73/74, see below). Eraser is whole-stroke or
+  pixel/segment, both undoable. `touch-action: none` (already set on
+  `.canvas-viewport`, NTA-33) satisfies "no native scroll/zoom on
+  pen/touch." Real build done, NTA-90/91/92/93 (2026-09-05) — this design
+  predates NTA-90 but was never itself scheduled into a phase (added
+  2026-09-01; see NTA-90 for the gap this closed). Tool selection is
+  sticky (stays active across strokes), a `createPortal`-rendered floating
+  panel (same fix `core.element.youtube-embed`'s insert dialog needed,
+  NTA-64) for pen/highlighter/eraser + color/size. Tiled rendering +
+  static/active layer split (Phase 9) real build done, NTA-73/74
+  (2026-09-05): `./ink.ts`'s `computeVisibleTiles` divides canvas-space
+  into a fixed 1024-unit grid (`INK_TILE_SIZE`) and returns only the
+  tiles intersecting the host's `visibleRect` (expanded by a 512-unit
+  `INK_TILE_OVERSCAN`, same "don't unmount right at the edge" reasoning
+  as `viewportCulling.ts`'s segment-culling margin) — each mounts its own
+  `<canvas>` (`InkLayer.tsx`'s `InkTileCanvas`), painting only the
+  committed strokes `bucketStrokesByTile` says intersect it, `memo`-
+  wrapped so a freshly-bucketed-but-unchanged array (as happens to every
+  unaffected tile during an eraser drag) doesn't trigger a repaint. The
+  in-progress pen/highlighter stroke paints onto its own small overlay
+  canvas instead, sized to just its own bounds and repainted every
+  `pointermove` — the "static tiles paint once, only the active stroke
+  repaints" split. The eraser's live preview isn't given its own overlay
+  (neither ticket asked for that); it still only repaints the tile(s) its
+  working set actually touches, via the same memo comparison.
+- **Images** (`plugins/element-image`, `core.element.image`): inserted
+  via file picker, drag-and-drop onto the canvas, or paste from
+  clipboard — the source file is copied into the page's workspace assets
+  (`assets/<id>/...`, §6), so `ImageElement.assetPath` stays valid even
+  if the original moves or is deleted. Resizes via the same drag-handle
+  model segments use (§4), aspect-ratio-locked by default, corner
+  handles rather than left/right-only since there's no text reflow to
+  constrain it to one axis. Added to this doc 2026-09-01 — previously
+  named only in the plugin roster (§1.4) and `ImageElement`'s own shape
+  (`apps/desktop/src/types/index.ts`; this doc never described it at
+  all, unlike every other element type here); real build tracked as
+  NTA-94.
 - **File attachments** (`plugins/element-file-attachment`,
   `core.element.file-attachment`): docx/xlsx/txt/md/etc.; double-click
   opens in the OS-default app via `@tauri-apps/plugin-shell`.
   Type-specific previews layer on afterward through the `fileHandlers`
-  extension point, without modifying this plugin.
+  extension point, without modifying this plugin. Real build done, NTA-62
+  (Phase 7) — `tauri.conf.json`'s `shell.open` needed a custom validation
+  regex beyond its mailto/tel/http(s)-only default so a local file path
+  actually passes the OS-open scope check; "Insert File Attachment" uses
+  `@tauri-apps/plugin-dialog` (added alongside this ticket) for a real
+  native file picker.
 - **YouTube embeds** (`plugins/element-youtube-embed`,
   `core.element.youtube-embed`): a prompt at insert time —
   `inline` renders a sandboxed `youtube-nocookie.com` iframe; `external`
-  opens the system browser via `shell.open`.
+  opens the system browser via `shell.open`. Real build done, NTA-63/64
+  (Phase 7).
 - **Canvas core** (`apps/desktop/src/canvas-core/`): single
   `{x, y, scale}` viewport transform (pan/zoom rescales around the
   pointer); one linear undo/redo `Command` stack per open page, shared
   across every plugin's mutating action, distinct from the workspace
   structural stack (§3); tiled rendering, static/active layer split, RAF
   batching, virtualized off-screen segments, per-plugin code-splitting.
+  Command stack + gesture coalescing real build done, NTA-66/67/68
+  (Phase 8) — `commandStack.ts`/`coalescer.ts`; formatting needed zero
+  `plugins/format-*` changes (every format command already flows through
+  the same segment-content-change path typing does), just disabling
+  TipTap's own competing `History` extension
+  (`packages/rich-text-engine`). RAF batching + virtualized off-screen
+  segments real build done, NTA-75/76 (Phase 9, partial — 2026-09-05):
+  `coalescer.ts`'s `apply()` now runs on the next animation frame instead
+  of synchronously per `update()`; `CanvasViewport.tsx` derives a
+  canvas-space `visibleRect` from the render surface's measured size and
+  `SegmentLayerHost.tsx` filters against it (`viewportCulling.ts`, 400-unit
+  overscan) so a segment far outside the viewport unmounts from the DOM
+  while its data stays in the model. Tiled ink rendering/static-active
+  layer split real build done, NTA-73/74 (2026-09-05, see §5's Ink
+  bullet for the detail); per-plugin code-splitting (NTA-77) is deferred
+  as its own follow-up pass.
 
 ## 6. Persistence
 
@@ -297,6 +353,17 @@ transactional-delete correctness justify it (Phase 11 stretch, not
 built now). Autosave is debounced (~800ms) with a hard flush on window
 blur/close; writes are write-to-temp-then-atomic-rename; a
 `schemaVersion` field enables independent migration paths per store.
+**Workspace root, decided with the user (2026-09-05, NTA-69) — not
+specified anywhere in this doc before, a real gap rather than an
+oversight**: `Documents/LinNote/` — visible and discoverable, the way
+OneNote's own notebook folder is, rather than a hidden app-managed
+directory; no folder-picker UI exists yet, so v1 has exactly one, fixed
+location. Real build done — see `apps/desktop/src/persistence/index.ts`
+(CRUD + crash safety + schemaVersion), `workspace/index.ts` and
+`canvas-core/index.ts` (load-at-startup + autosave wiring, kept out of
+`persistence/` itself so the dependency arrow keeps pointing the way
+this section's own opening sentence describes), and
+`persistence/autosave.ts` (the window-close hard flush).
 
 ## 7. Cloud sync (OneDrive & Google Drive)
 

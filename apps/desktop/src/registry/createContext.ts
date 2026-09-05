@@ -5,7 +5,13 @@
 // - ctx.commands is a single shared CommandBus (below), so a plugin's
 //   activate() registering a command and the shell (../shell/) dispatching
 //   a click on that command's menu/toolbar entry are reading and writing
-//   the exact same table — not two independent, disconnected mocks.
+//   the exact same table — not two independent, disconnected mocks. It's
+//   genuinely shared, mutable, app-wide state, not solely plugin-owned:
+//   NTA-38 has app-side code (../canvas-core/SegmentLayerHost.tsx) call
+//   the raw `CommandBus` (passed down from ../App.tsx, not through a
+//   PluginContext) to install a real, live-page-aware handler over a
+//   command a plugin's own activate() only registered a fallback for —
+//   the plugin structurally can't reach `apps/desktop`'s state itself.
 // - ctx.storage is scoped per plugin id (a plugin can only read/write its
 //   own namespace, per @linnote/plugin-sdk's PluginContext contract), kept
 //   in memory only for now.
@@ -28,6 +34,17 @@ import type { CanvasElementTypeContribution, MenuContribution, PluginContext, Pl
 
 export interface CommandBus {
   register: (id: string, fn: (...args: unknown[]) => unknown) => void;
+  /**
+   * Removes `id`'s registration, if any (a no-op otherwise) — for
+   * app-side code (never exposed on `PluginContext.commands`, which only
+   * forwards `register`/`run` below) that installs a real, live-state-
+   * aware handler over a plugin's own activate()-time registration and
+   * needs to clean up when that live state goes away, e.g.
+   * apps/desktop/src/canvas-core/SegmentLayerHost.tsx unregistering
+   * NTA-38's `CREATE_VISIBLE_SEGMENT_COMMAND` handler on unmount so a
+   * stale, closed-over `pageId` can't linger and fire after the fact.
+   */
+  unregister: (id: string) => void;
   run: (id: string, ...args: unknown[]) => unknown;
   has: (id: string) => boolean;
 }
@@ -43,6 +60,9 @@ export function createCommandBus(): CommandBus {
   return {
     register: (id, fn) => {
       commands.set(id, fn);
+    },
+    unregister: (id) => {
+      commands.delete(id);
     },
     run: (id, ...args) => {
       const fn = commands.get(id);

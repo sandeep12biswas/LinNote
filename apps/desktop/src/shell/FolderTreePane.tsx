@@ -3,8 +3,8 @@
 // disclosure triangles, click-to-select (writes `selectedFolderId` in
 // ../store), native HTML5 drag-and-drop (reparent, or same-parent
 // reorder — NTA-53) with a highlighted insertion indicator, and a
-// right-click context menu (rename, move, delete, new folder) driven by
-// ../workspace's `useWorkspaceTreeStore`.
+// right-click context menu (rename, move, delete, new folder, new page)
+// driven by ../workspace's `useWorkspaceTreeStore`.
 //
 // Mirrors MenuBar.tsx/Toolbar.tsx's decoupling: this component reads and
 // writes the workspace tree store directly (there's no command-bus
@@ -36,10 +36,27 @@
 // `useElementSize` (./useElementSize.ts) measures the pane's actual
 // available height (no `AutoSizer` package is a dependency here, see that
 // file's doc comment) since `FixedSizeList` needs an explicit `height`.
+//
+// NTA-100: "New Page" was missing from the UI entirely — `handleNewPage`
+// below is the same `createCreateNodeCommand` call `handleNewFolder`
+// already makes, just `type: "page"`, targeting whichever row (always a
+// notebook/folder — pages are filtered out of this tree by
+// `buildFolderTree`, see ./folderTree.ts) was right-clicked. Unlike
+// `handleNewFolder`, this doesn't `startRename` the result — a page isn't
+// rendered in *this* tree, so there's no row to attach an inline-rename
+// `<input>` to. It selects the folder and opens the new page instead
+// (`setSelectedFolder`/`setActivePage`, both already used elsewhere in
+// this file), landing the user on it so they can rename/start typing via
+// the page's own header (NTA-34) — visible feedback that something
+// actually happened, since silently creating a node the user can't see
+// wouldn't read as "it worked." PageListPane.tsx has its own "New Page"
+// toolbar button for the same command, targeting the folder it's already
+// showing rather than whatever's right-clicked here.
 
 import { useEffect, useState } from "react";
 import { FixedSizeList, type ListChildComponentProps } from "react-window";
 import type { WorkspaceNode } from "../types";
+import { useCanvasCommandStore } from "../canvas-core";
 import { useNavigationStore } from "../store";
 import { getDescendantIds, useWorkspaceTreeStore } from "../workspace";
 import { buildFolderTree, canDrop, canReparent, resolveDrop, type DropPosition } from "./folderTree";
@@ -130,6 +147,14 @@ export function FolderTreePane() {
     startRename(created);
   }
 
+  function handleNewPage(parentId: string) {
+    const { command, node: created } = createCreateNodeCommand({ parentId, type: "page", title: "New Page" });
+    executeCommand(command);
+    setSelectedFolder(parentId);
+    setActivePage(created.id);
+    setContextMenu(null);
+  }
+
   function handleDelete(nodeId: string) {
     const deletedIds = new Set([nodeId, ...getDescendantIds(nodes, nodeId)]);
     if (selectedFolderId && deletedIds.has(selectedFolderId)) setSelectedFolder(null);
@@ -163,17 +188,44 @@ export function FolderTreePane() {
       ? nodes.filter((n) => n.type !== "page" && n.trashedAt == null && canReparent(nodes, contextMenu.nodeId, n.id))
       : [];
 
-  // Ctrl/Cmd+Z (undo) and Ctrl/Cmd+Shift+Z (redo) for the structural
-  // stack, window-scoped like a document-level shortcut rather than
-  // requiring this pane to hold focus. Skipped while typing in the
-  // rename `<input>` (or any other text field) so its own native
-  // text-undo isn't hijacked.
+  // Ctrl/Cmd+Z (undo) and Ctrl/Cmd+Shift+Z (redo), window-scoped like a
+  // document-level shortcut rather than requiring this pane to hold
+  // focus. Skipped while typing in the rename `<input>` (or any other
+  // text field, e.g. the page title) so its own native text-undo isn't
+  // hijacked.
+  //
+  // NTA-66 (Phase 8): now routes to one of *two* independent stacks —
+  // this pane's own structural one (move/rename/delete/create a tree
+  // node), or ../canvas-core/commandStack.ts's canvas one
+  // (segment/file-attachment/youtube-embed edits) — per
+  // docs/architecture.md §3's "Structural operations ... are undoable on
+  // a stack separate from the canvas command stack." The heuristic:
+  // whenever a page is open (`activePageId` set), the user's most likely
+  // undo intent is their in-page edits, so the canvas stack wins; only
+  // route to structural when no page is open. This pane's own Undo/Redo
+  // buttons below still target the structural stack explicitly and
+  // unambiguously regardless of this heuristic — as does
+  // ../shell/AppShell.tsx's `CanvasUndoRedoControls` for the canvas one.
+  //
+  // Before this ticket, TipTap's own `History` extension intercepted
+  // Ctrl+Z while a segment's contenteditable had focus (ProseMirror
+  // handles it at the DOM target before the event ever bubbles to this
+  // window listener) — now that `History` is disabled
+  // (`packages/rich-text-engine`, see commandStack.ts's header comment),
+  // every Ctrl+Z reaches this one handler, which is exactly why the
+  // heuristic above has to exist now and didn't before.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
       const target = e.target;
       if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
       e.preventDefault();
+      if (useNavigationStore.getState().activePageId) {
+        const canvasStore = useCanvasCommandStore.getState();
+        if (e.shiftKey) canvasStore.redo();
+        else canvasStore.undo();
+        return;
+      }
       if (e.shiftKey) redo();
       else undo();
     }
@@ -326,6 +378,11 @@ export function FolderTreePane() {
           <li role="none">
             <button type="button" role="menuitem" onClick={() => handleNewFolder(contextMenu.nodeId)}>
               New Folder
+            </button>
+          </li>
+          <li role="none">
+            <button type="button" role="menuitem" onClick={() => handleNewPage(contextMenu.nodeId)}>
+              New Page
             </button>
           </li>
         </ul>

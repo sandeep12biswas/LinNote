@@ -40,6 +40,12 @@
 
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 import { create } from "zustand";
+// Type-only — see ./index.ts's own persistence-wiring functions at the
+// bottom for why this file never imports a *value* from ../persistence
+// (that would point the dependency arrow the wrong way; ../persistence's
+// own header comment is explicit that everything else depends on it, not
+// the reverse).
+import type { PersistenceProvider } from "../persistence";
 import type { NodeType, WorkspaceNode } from "../types";
 import { createSeedWorkspaceNodes } from "./mockData";
 
@@ -407,3 +413,61 @@ export const useWorkspaceTreeStore = create<WorkspaceTreeState>((set, get) => ({
 }));
 
 export { createSeedWorkspaceNodes } from "./mockData";
+
+// ---- Persistence wiring (NTA-69/70, Phase 8) ----------------------------
+// Lives here, not in ../persistence/, so ../persistence/ never has to
+// import a *value* from this file (see the type-only import up top).
+// ../App.tsx calls both once per app session, the same way it builds and
+// activates the one real `PluginRegistry`.
+
+/**
+ * Loads the persisted tree at startup. A truly fresh workspace (no
+ * `tree.json` yet — `persistence.readTree()` resolves `[]`) is seeded
+ * with the same default notebook `useWorkspaceTreeStore` always started
+ * from, and immediately persisted — the app must never open to a
+ * dead-end empty Folder Tree with no node to right-click and no UI
+ * anywhere (yet) to create a root-level notebook from scratch.
+ */
+export async function loadWorkspaceTree(persistence: PersistenceProvider): Promise<void> {
+  const nodes = await persistence.readTree();
+  if (nodes.length === 0) {
+    const seeded = createSeedWorkspaceNodes();
+    useWorkspaceTreeStore.setState({ nodes: seeded });
+    await persistence.writeTree(seeded);
+    return;
+  }
+  useWorkspaceTreeStore.setState({ nodes });
+}
+
+/**
+ * Persists every subsequent tree mutation immediately (docs/architecture.md
+ * §6: "tree ... mutations flush immediately"), not debounced the way page
+ * edits are (../canvas-core/index.ts's `createNotePageAutosave`). Also
+ * deletes a page's own persisted content (`persistence.deletePage`) for
+ * every page-type node that just disappeared from the tree entirely —
+ * `purgeNode`/`emptyTrash`/`purgeExpiredTrash` (permanently deleting from
+ * trash) only ever touch `WorkspaceNode`s, so without this, a
+ * permanently-deleted page's `pages/<id>.json` would silently linger on
+ * disk forever, orphaned. A page merely *soft*-deleted (`deleteNode`,
+ * still in `nodes` with `trashedAt` set, restorable) is untouched — its
+ * content must survive a restore. Call once per app session; returns the
+ * zustand unsubscribe function.
+ */
+export function wireWorkspaceTreeAutosave(persistence: PersistenceProvider): () => void {
+  return useWorkspaceTreeStore.subscribe((state, prevState) => {
+    if (state.nodes === prevState.nodes) return; // no structural mutation happened
+
+    const stillPresent = new Set(state.nodes.map((node) => node.id));
+    for (const node of prevState.nodes) {
+      if (node.type === "page" && !stillPresent.has(node.id)) {
+        persistence.deletePage(node.id).catch((error) => {
+          console.error(`[autosave] failed to delete pages/${node.id}.json`, error);
+        });
+      }
+    }
+
+    persistence.writeTree(state.nodes).catch((error) => {
+      console.error("[autosave] failed to write tree.json", error);
+    });
+  });
+}

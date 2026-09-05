@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
+import type { FileHandlerContribution, MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { PluginState, RegisteredPlugin } from "../registry";
-import { buildMenuBar, buildToolbar } from "./index";
+import { buildFileHandlers, buildMenuBar, buildToolbar } from "./index";
 
 function makeRegisteredPlugin(id: string, state: PluginState, menu: MenuContribution[]): RegisteredPlugin {
   return {
@@ -192,5 +192,66 @@ describe("buildToolbar", () => {
 
   it("returns an empty model for no plugins", () => {
     expect(buildToolbar([])).toEqual([]);
+  });
+});
+
+function makeRegisteredPluginWithFileHandlers(
+  id: string,
+  state: PluginState,
+  fileHandlers: FileHandlerContribution[],
+): RegisteredPlugin {
+  return {
+    plugin: {
+      manifest: { id, name: id, version: "0.1.0", contributes: { fileHandlers } },
+      activate: () => {},
+    },
+    state,
+  };
+}
+
+describe("buildFileHandlers", () => {
+  it("keys active plugins' fileHandlers contributions by lower-cased extension", () => {
+    const office = makeRegisteredPluginWithFileHandlers("community.office-preview", "active", [
+      { extension: "docx", label: "Preview with Office", commandId: "community.office-preview.open" },
+    ]);
+
+    const map = buildFileHandlers([office]);
+
+    expect(map.get("docx")).toEqual({ extension: "docx", label: "Preview with Office", commandId: "community.office-preview.open" });
+    expect(map.get("DOCX")).toBeUndefined(); // lookup side normalizes case, not storage
+  });
+
+  it("normalizes a mixed-case declared extension to lower-case as the map key", () => {
+    const plugin = makeRegisteredPluginWithFileHandlers("community.office-preview", "active", [
+      { extension: "DOCX", label: "Preview with Office", commandId: "community.office-preview.open" },
+    ]);
+
+    expect(buildFileHandlers([plugin]).has("docx")).toBe(true);
+  });
+
+  it("excludes disabled/failed plugins' contributions", () => {
+    const disabled = makeRegisteredPluginWithFileHandlers("community.disabled", "disabled", [
+      { extension: "pdf", label: "Preview PDF", commandId: "community.disabled.open" },
+    ]);
+    const failed = makeRegisteredPluginWithFileHandlers("community.failed", "failed", [
+      { extension: "pdf", label: "Preview PDF (other)", commandId: "community.failed.open" },
+    ]);
+
+    expect(buildFileHandlers([disabled, failed]).size).toBe(0);
+  });
+
+  it("keeps the first-registered handler when two active plugins claim the same extension", () => {
+    const first = makeRegisteredPluginWithFileHandlers("community.first", "active", [
+      { extension: "pdf", label: "First", commandId: "community.first.open" },
+    ]);
+    const second = makeRegisteredPluginWithFileHandlers("community.second", "active", [
+      { extension: "pdf", label: "Second", commandId: "community.second.open" },
+    ]);
+
+    expect(buildFileHandlers([first, second]).get("pdf")?.commandId).toBe("community.first.open");
+  });
+
+  it("returns an empty map for no plugins", () => {
+    expect(buildFileHandlers([]).size).toBe(0);
   });
 });
