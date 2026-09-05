@@ -26,10 +26,50 @@
 // Editor Canvas placeholder panes into the full layout from §2 — `App.tsx`
 // just renders it.
 //
-// TODO(phase-2): Folder Tree pane + Page List pane (§4.1, §5.4), fractional
-// -index drag-to-reorder, breadcrumb trail.
+// NTA-15 (integration) wires a real, activated `PluginRegistry` (built in
+// ../App.tsx) into `AppShell` — `buildMenuBar`/`buildToolbar` above now run
+// against real active plugins instead of an empty list — and adds
+// `PluginsStatusPanel` (./PluginsStatusPanel.tsx), the minimal
+// "Settings > Plugins" stand-in the story's acceptance criteria needs.
+//
+// NTA-49/50/51 add the real Folder Tree / Page List panes: `buildFolderTree`
+// (./folderTree.ts) + `FolderTreePane` (./FolderTreePane.tsx) render the
+// notebook/folder subset of the tree with expand/collapse, drag-to-reparent,
+// and a rename/move/delete/new-folder context menu; `buildPageList`
+// (./pageList.ts) + `PageListPane` (./PageListPane.tsx) list the selected
+// folder's pages with subpages nested. Both read/write the in-memory
+// `WorkspaceNode` tree store in ../workspace/ (NTA-49).
+//
+// NTA-55 adds the breadcrumb trail above the editor canvas:
+// `buildBreadcrumb` (./breadcrumb.ts) + `BreadcrumbTrail`
+// (./BreadcrumbTrail.tsx) turn the open page's ancestor chain
+// (../workspace's `getAncestorChain`) into a clickable "notebook >
+// folder > ... > page" trail, mirroring the same pure-model /
+// React-component split.
+//
+// NTA-52 adds the structural-operation undo/redo stack
+// (./structuralUndoStack.ts, ./workspaceCommands.ts) that
+// `FolderTreePane` now routes its create/rename/move/delete through.
+//
+// NTA-53 adds precise same-parent drag-to-reorder to `FolderTreePane`
+// (`canDrop`/`resolveDrop` in ./folderTree.ts) on top of NTA-50's
+// drop-to-reparent, plus automatic order-key rebalancing in
+// ../workspace/index.ts's `moveNode`.
+//
+// NTA-54 adds the Trash UI: `buildTrashList` (./trash.ts) + `TrashPane`
+// (./TrashPane.tsx) browse/restore/permanently-delete trashed nodes
+// (cascade soft-delete itself was already NTA-49's `deleteNode`), plus a
+// background sweep purging anything past the retention window.
+//
+// NTA-56 adds three things to this directory: `FolderTreePane`/
+// `PageListPane` now render through `react-window`'s `FixedSizeList`
+// (backed by `./useElementSize.ts`, sized via `./virtualization.ts`'s
+// shared row-height constant) instead of a plain `.map(...)`, so a large
+// tree/page list only ever mounts the rows currently scrolled into view;
+// `SearchBox` (./SearchBox.tsx) + `./searchNavigation.ts` give the new
+// incremental search index (../search/) a place in the running app.
 
-import type { MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
+import type { FileHandlerContribution, MenuContribution, ToolbarContribution } from "@linnote/plugin-sdk";
 import type { RegisteredPlugin } from "../registry";
 
 /** Canonical left-to-right order of the app's top-level menus (docs/architecture.md §2). */
@@ -171,8 +211,69 @@ function toButtonModel(contribution: ToolbarContribution): ToolbarButtonModel {
   return { label: contribution.label, icon: contribution.icon, commandId: contribution.commandId };
 }
 
+/**
+ * NTA-65's `fileHandlers` extension-point plumbing — the base contribution
+ * surface a future per-extension preview/open plugin (e.g. an Office
+ * previewer) layers on top of `core.element.file-attachment` without
+ * modifying it (Desing architecture §10.1, §1.3's `fileHandlers` row).
+ * Same aggregate-active-plugins'-contributions shape as
+ * `buildMenuBar`/`buildToolbar` above, keyed by extension
+ * (case-insensitive) instead of grouped/sorted for display — a plugin's
+ * `commandId` is looked up on the shared `CommandBus` and run with the
+ * attachment as its argument by whichever active
+ * `core.element.file-attachment` render surface is asking (currently
+ * `apps/desktop/src/canvas-core/FileAttachmentHost.tsx`).
+ *
+ * First-registered wins on a duplicate extension (activation order,
+ * mirroring every other contribution's own tie-break here) — two plugins
+ * both claiming the same extension is a plugin-authoring conflict this
+ * function doesn't try to arbitrate further.
+ */
+export function buildFileHandlers(registeredPlugins: RegisteredPlugin[]): Map<string, FileHandlerContribution> {
+  const contributions = registeredPlugins
+    .filter((rp) => rp.state === "active")
+    .flatMap((rp) => rp.plugin.manifest.contributes.fileHandlers ?? []);
+
+  const byExtension = new Map<string, FileHandlerContribution>();
+  for (const contribution of contributions) {
+    const extension = contribution.extension.toLowerCase();
+    if (!byExtension.has(extension)) byExtension.set(extension, contribution);
+  }
+  return byExtension;
+}
+
 export { MenuBar } from "./MenuBar";
 export type { MenuBarProps } from "./MenuBar";
 export { Toolbar } from "./Toolbar";
 export type { ToolbarProps } from "./Toolbar";
 export { AppShell } from "./AppShell";
+export type { AppShellProps } from "./AppShell";
+export { PluginsStatusPanel } from "./PluginsStatusPanel";
+export type { PluginsStatusPanelProps } from "./PluginsStatusPanel";
+export { FolderTreePane } from "./FolderTreePane";
+export { buildFolderTree, canDrop, canReparent, resolveDrop } from "./folderTree";
+export type { DropPosition, FolderTreeRow, ResolvedDrop } from "./folderTree";
+export { PageListPane } from "./PageListPane";
+export { buildPageList } from "./pageList";
+export type { PageListRow } from "./pageList";
+export { BreadcrumbTrail } from "./BreadcrumbTrail";
+export { buildBreadcrumb } from "./breadcrumb";
+export type { BreadcrumbSegment } from "./breadcrumb";
+export { useStructuralUndoStore, pushCommand, popUndo, popRedo } from "./structuralUndoStack";
+export type { Command, UndoStackState } from "./structuralUndoStack";
+export {
+  createCreateNodeCommand,
+  createRenameNodeCommand,
+  createMoveNodeCommand,
+  createDeleteNodeCommand,
+} from "./workspaceCommands";
+export { TrashPane } from "./TrashPane";
+export type { TrashPaneProps } from "./TrashPane";
+export { buildTrashList } from "./trash";
+export type { TrashRow } from "./trash";
+export { SearchBox } from "./SearchBox";
+export { resolveSearchResultSelection } from "./searchNavigation";
+export type { SearchResultSelection } from "./searchNavigation";
+export { useElementSize } from "./useElementSize";
+export type { ElementSize } from "./useElementSize";
+export { PANE_ROW_HEIGHT } from "./virtualization";
