@@ -7,9 +7,9 @@ never drift for long; if they do, Jira is the source of truth and this file
 gets corrected.
 
 Built by cross-referencing three things as of **2026-08-30**, last updated
-**2026-09-01** (Phase 2 completion): the Notion "Desing architecture" (v2.2)
+**2026-09-05** (Phase 7 completion): the Notion "Desing architecture" (v2.2)
 and "Plugins" (v1.1) pages, the actual code in this repo (`plugins/*`,
-`apps/desktop/src/*`), and every issue in Jira project NTA (NTA-1…NTA-84).
+`apps/desktop/src/*`), and every issue in Jira project NTA (NTA-1…NTA-99).
 See `docs/plan.md` for the narrative gap-analysis this list was generated
 from.
 
@@ -97,8 +97,8 @@ added that day to close the gap.
   - [ ] [NTA-25](https://sandeep12biswas.atlassian.net/browse/NTA-25) core.element.ink — real build tracked as NTA-90 below
   - [x] [NTA-26](https://sandeep12biswas.atlassian.net/browse/NTA-26) core.element.text-segment — real implementation via NTA-37-41, not a separate stub
   - [ ] [NTA-27](https://sandeep12biswas.atlassian.net/browse/NTA-27) core.element.image — real build tracked as NTA-94 below
-  - [ ] [NTA-28](https://sandeep12biswas.atlassian.net/browse/NTA-28) core.element.file-attachment
-  - [ ] [NTA-29](https://sandeep12biswas.atlassian.net/browse/NTA-29) core.element.youtube-embed
+  - [x] [NTA-28](https://sandeep12biswas.atlassian.net/browse/NTA-28) core.element.file-attachment — real implementation via NTA-45/62, not a separate stub
+  - [x] [NTA-29](https://sandeep12biswas.atlassian.net/browse/NTA-29) core.element.youtube-embed — real implementation via NTA-45/63-64, not a separate stub
   - [ ] [NTA-30](https://sandeep12biswas.atlassian.net/browse/NTA-30) core.sync.onedrive
   - [ ] [NTA-31](https://sandeep12biswas.atlassian.net/browse/NTA-31) core.sync.google-drive
 
@@ -164,16 +164,16 @@ beyond the stub activation above. Same pattern as NTA-42.
   - [x] [NTA-60](https://sandeep12biswas.atlassian.net/browse/NTA-60) core.format.checkbox-list: checkable to-do list node
   - [x] [NTA-61](https://sandeep12biswas.atlassian.net/browse/NTA-61) core.format.alignment: paragraph/segment alignment
 
-## Phase 7 — Attachments & embeds (build) ⚪ NOT STARTED
+## Phase 7 — Attachments & embeds (build) ✅ DONE
 
 Real file-attachment (open in OS-default app) and YouTube-embed (inline vs.
 external playback) behavior, beyond the stub activation above.
 
-- [ ] [NTA-45](https://sandeep12biswas.atlassian.net/browse/NTA-45) — Phase 7: Attachments & embeds (build)
-  - [ ] [NTA-62](https://sandeep12biswas.atlassian.net/browse/NTA-62) core.element.file-attachment: data model + icon/filename renderer + open externally
-  - [ ] [NTA-63](https://sandeep12biswas.atlassian.net/browse/NTA-63) core.element.youtube-embed: data model + inline sandboxed player
-  - [ ] [NTA-64](https://sandeep12biswas.atlassian.net/browse/NTA-64) YouTube insert-time prompt: "Play here" vs "Open in browser"
-  - [ ] [NTA-65](https://sandeep12biswas.atlassian.net/browse/NTA-65) fileHandlers extension point plumbing
+- [x] [NTA-45](https://sandeep12biswas.atlassian.net/browse/NTA-45) — Phase 7: Attachments & embeds (build) — all 4 subtasks merged into `feature/module-build` (2026-09-05), transitioned to Done in Jira with a summary comment. `@tauri-apps/plugin-dialog` added as a new standard Tauri plugin (npm + Cargo + capability) for a real native file picker, confirmed with the user first since it wasn't an explicit subtask. `tauri.conf.json`'s `shell.open` also needed a custom validation regex — the default only allows mailto/tel/http(s) links, which would have silently rejected every local file path.
+  - [x] [NTA-62](https://sandeep12biswas.atlassian.net/browse/NTA-62) core.element.file-attachment: data model + icon/filename renderer + open externally
+  - [x] [NTA-63](https://sandeep12biswas.atlassian.net/browse/NTA-63) core.element.youtube-embed: data model + inline sandboxed player
+  - [x] [NTA-64](https://sandeep12biswas.atlassian.net/browse/NTA-64) YouTube insert-time prompt: "Play here" vs "Open in browser"
+  - [x] [NTA-65](https://sandeep12biswas.atlassian.net/browse/NTA-65) fileHandlers extension point plumbing
 
 ## Cross-cutting — Images (core.element.image) ⚪ NOT STARTED
 

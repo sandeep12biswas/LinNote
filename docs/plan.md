@@ -2,7 +2,7 @@
 
 This mirrors the phase breakdown in `docs/architecture.md` §9, cross-referenced
 against the actual state of Jira project **NTA** as of 2026-08-30, last
-updated 2026-09-01 (Phase 2 completion). Update this file whenever a phase's
+updated 2026-09-05 (Phase 7 completion). Update this file whenever a phase's
 Jira mapping changes (a new Story is broken out, a phase's scope shifts) —
 it's the one place to see "what phase are we on and what's actually tracked
 for it," rather than re-deriving it from the Jira backlog each time.
@@ -129,17 +129,27 @@ Non-overlap, block-and-snap.
 - **NTA-32** (Story) 🟡 — continued:
   - NTA-41 ⚪ Segment block: non-overlap (block-and-snap)
 
-## Phase 7 — Attachments & embeds ⚪
+## Phase 7 — Attachments & embeds ✅
 
 Real file-attachment (open in OS-default app) and YouTube-embed
 (inline vs. external playback prompt) behavior, beyond the stub activation in
-NTA-28/29.
+NTA-28/29 (closed out by this same real build, per the same pattern
+NTA-21/26 already established for headers/text-segment).
 
-- **NTA-45** (Story) ⚪ — Phase 7: Attachments & embeds (build)
-  - NTA-62 ⚪ core.element.file-attachment: data model + icon/filename renderer + open externally
-  - NTA-63 ⚪ core.element.youtube-embed: data model + inline sandboxed player
-  - NTA-64 ⚪ YouTube insert-time prompt: "Play here" vs "Open in browser"
-  - NTA-65 ⚪ fileHandlers extension point plumbing
+- **NTA-45** (Story) ✅ — Phase 7: Attachments & embeds (build) — merged into
+  `feature/module-build` 2026-09-05, transitioned to Done in Jira with a
+  summary comment (commit 2682b27). `@tauri-apps/plugin-dialog` added as a
+  new standard Tauri plugin (npm + Cargo + capability) for a real native
+  file picker on "Insert File Attachment" — confirmed with the user first,
+  since it wasn't an explicit subtask. `tauri.conf.json`'s `shell.open`
+  needed a custom validation regex too — its default only allows
+  mailto/tel/http(s) links, which would have silently rejected every local
+  file path `core.element.file-attachment`'s "open externally" needs to
+  open.
+  - NTA-62 ✅ core.element.file-attachment: data model + icon/filename renderer + open externally
+  - NTA-63 ✅ core.element.youtube-embed: data model + inline sandboxed player
+  - NTA-64 ✅ YouTube insert-time prompt: "Play here" vs "Open in browser"
+  - NTA-65 ✅ fileHandlers extension point plumbing
 
 ## Phase 8 — Undo/redo, model & persistence ⚪
 
@@ -226,10 +236,11 @@ what used to be gaps. Rough build order, with reasoning:
    one at a time). Real Folder Tree / Page List data, undo, ordering, trash,
    breadcrumbs, and a search index all exist now — nothing below has to test
    against a hardcoded stub page anymore.
-3. Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text
-   (NTA-32) — each sub-piece builds directly on the last. **Next up.**
-4. Phase 5 — Remaining formatting plugins, build (NTA-44).
-5. Phase 7 — Attachments & embeds, build (NTA-45).
+3. ✅ Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text
+   (NTA-32) — done; each sub-piece built directly on the last.
+4. ✅ Phase 5 — Remaining formatting plugins, build (NTA-44) — done.
+5. ✅ Phase 7 — Attachments & embeds, build (NTA-45) — done as of
+   2026-09-05. **Next up: Phase 8.**
 6. Phase 8 — Undo/redo & full persistence (NTA-46).
 7. Phase 9 — Performance pass (NTA-47).
 8. Phase 10 — Cloud sync, build (NTA-48).

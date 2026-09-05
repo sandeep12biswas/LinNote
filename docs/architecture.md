@@ -269,11 +269,17 @@ concerns with no dependency between them.
   `core.element.file-attachment`): docx/xlsx/txt/md/etc.; double-click
   opens in the OS-default app via `@tauri-apps/plugin-shell`.
   Type-specific previews layer on afterward through the `fileHandlers`
-  extension point, without modifying this plugin.
+  extension point, without modifying this plugin. Real build done, NTA-62
+  (Phase 7) — `tauri.conf.json`'s `shell.open` needed a custom validation
+  regex beyond its mailto/tel/http(s)-only default so a local file path
+  actually passes the OS-open scope check; "Insert File Attachment" uses
+  `@tauri-apps/plugin-dialog` (added alongside this ticket) for a real
+  native file picker.
 - **YouTube embeds** (`plugins/element-youtube-embed`,
   `core.element.youtube-embed`): a prompt at insert time —
   `inline` renders a sandboxed `youtube-nocookie.com` iframe; `external`
-  opens the system browser via `shell.open`.
+  opens the system browser via `shell.open`. Real build done, NTA-63/64
+  (Phase 7).
 - **Canvas core** (`apps/desktop/src/canvas-core/`): single
   `{x, y, scale}` viewport transform (pan/zoom rescales around the
   pointer); one linear undo/redo `Command` stack per open page, shared
