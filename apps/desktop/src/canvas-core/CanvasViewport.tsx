@@ -56,6 +56,14 @@ export interface CanvasPoint {
   y: number;
 }
 
+/** A rectangle in canvas-space — same coordinate space as `CanvasPoint`. */
+export interface CanvasRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface CanvasCoordinates {
   /** Converts a pointer event's `clientX`/`clientY` (screen space) into canvas-space, undoing the current pan/zoom transform. */
   screenToCanvas: (clientX: number, clientY: number) => CanvasPoint;
@@ -80,12 +88,24 @@ export interface CanvasCoordinates {
    * else clears it automatically.
    */
   setPanSuppressed: (suppressed: boolean) => void;
+  /**
+   * The currently-visible portion of the canvas, in canvas-space —
+   * `null` until the surface's size has actually been measured (its
+   * first `ResizeObserver` callback), including in a test environment
+   * whose `ResizeObserver` stub never fires one (../../vitest.setup.ts) —
+   * a consumer culling off-screen content (NTA-76's
+   * `./viewportCulling.ts`) must treat `null` as "show everything," not
+   * "nothing is visible yet."
+   */
+  visibleRect: CanvasRect | null;
 }
 
-const CanvasCoordinatesContext = createContext<CanvasCoordinates>({
+/** Exported for tests only (e.g. ./SegmentLayerHost.test.tsx's NTA-76 culling test) — real consumers go through `useCanvasCoordinates()` below, never this context directly. */
+export const CanvasCoordinatesContext = createContext<CanvasCoordinates>({
   screenToCanvas: (x, y) => ({ x, y }),
   pointerPosition: null,
   setPanSuppressed: () => {},
+  visibleRect: null,
 });
 
 /** Read by anything mounted as `CanvasViewport`'s `children` — see this file's header comment. */
@@ -164,9 +184,46 @@ export function CanvasViewport({ pageId, header, children }: CanvasViewportProps
     panSuppressedRef.current = suppressed;
   }, []);
 
+  // NTA-76: the surface's rendered (screen-space) size, tracked the same
+  // way ../shell/useElementSize.ts already does for FolderTreePane/
+  // PageListPane's `react-window` lists (NTA-56) — reusing that hook
+  // directly isn't quite possible since it hands back its own ref, and
+  // `surfaceRef` above already needs to be *this* element's ref for
+  // `screenToCanvas`/`handleWheel`'s `getBoundingClientRect()` calls.
+  // Stays `{ width: 0, height: 0 }` (so `visibleRect` below stays `null`)
+  // until the first real callback — including forever in this package's
+  // test environment, whose `ResizeObserver` stub
+  // (../../vitest.setup.ts) never calls back at all.
+  const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setSurfaceSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // NTA-76: the currently-visible canvas-space rectangle — same inverse
+  // transform as `screenToCanvas` above (`canvasPoint = (screenPoint -
+  // viewport.xy) / viewport.scale`), applied to the surface's top-left
+  // corner and its full measured size rather than one pointer position.
+  const visibleRect = useMemo<CanvasRect | null>(() => {
+    if (surfaceSize.width === 0 && surfaceSize.height === 0) return null; // not measured yet
+    return {
+      x: -viewport.x / viewport.scale,
+      y: -viewport.y / viewport.scale,
+      width: surfaceSize.width / viewport.scale,
+      height: surfaceSize.height / viewport.scale,
+    };
+  }, [viewport, surfaceSize]);
+
   const coordinates = useMemo<CanvasCoordinates>(
-    () => ({ screenToCanvas, pointerPosition, setPanSuppressed }),
-    [screenToCanvas, pointerPosition, setPanSuppressed],
+    () => ({ screenToCanvas, pointerPosition, setPanSuppressed, visibleRect }),
+    [screenToCanvas, pointerPosition, setPanSuppressed, visibleRect],
   );
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {

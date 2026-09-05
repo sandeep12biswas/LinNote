@@ -40,6 +40,14 @@
 // burst) goes through the store's `execute` instead, wrapped as its own
 // undoable insert. `handleHeightChange` deliberately does NOT — auto-grow
 // height is measured, not a gesture (same header comment).
+//
+// NTA-76 (Phase 9): `segments` below is also filtered against
+// `useCanvasCoordinates()`'s `visibleRect` (./CanvasViewport.tsx) before
+// it's handed to `SegmentLayer` — a segment far outside the visible
+// canvas area unmounts from the DOM entirely (see ./viewportCulling.ts)
+// while its full data stays exactly where it always lived, in
+// `useNotePageStore`'s `elements` array; nothing here mutates the model,
+// only what gets rendered.
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { CREATE_VISIBLE_SEGMENT_COMMAND, SegmentLayer, type SegmentBlockData } from "@linnote/plugin-element-text-segment";
@@ -50,6 +58,7 @@ import { createCoalescer, flushInSequenceOrder } from "./coalescer";
 import { registerFlushHook, useCanvasCommandStore } from "./commandStack";
 import { useCanvasCoordinates } from "./CanvasViewport";
 import { useNotePageStore } from "./index";
+import { isRectVisible, VIEWPORT_CULL_MARGIN } from "./viewportCulling";
 
 function isSegment(element: CanvasElement): element is SegmentBlock {
   return element.type === "segment";
@@ -77,11 +86,17 @@ export function SegmentLayerHost({ pageId, commandBus }: SegmentLayerHostProps) 
   const addElement = useNotePageStore((state) => state.addElement);
   const removeElement = useNotePageStore((state) => state.removeElement);
   const updateElement = useNotePageStore((state) => state.updateElement);
-  const { pointerPosition, screenToCanvas, setPanSuppressed } = useCanvasCoordinates();
+  const { pointerPosition, screenToCanvas, setPanSuppressed, visibleRect } = useCanvasCoordinates();
 
   const segments = useMemo(
-    () => (notePage ? notePage.elements.filter(isSegment).map(toSegmentBlockData) : []),
-    [notePage],
+    () =>
+      notePage
+        ? notePage.elements
+            .filter(isSegment)
+            .filter((segment) => visibleRect === null || isRectVisible(segment, visibleRect, VIEWPORT_CULL_MARGIN))
+            .map(toSegmentBlockData)
+        : [],
+    [notePage, visibleRect],
   );
 
   function findSegment(id: string): SegmentBlock | undefined {

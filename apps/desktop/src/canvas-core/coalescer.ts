@@ -58,6 +58,21 @@
 // `sequence` — assigned once, when that burst *starts* — so they can be
 // committed in true chronological order regardless of which channel
 // each belongs to.
+//
+// NTA-75 (Phase 9): `apply()` itself is now RAF-batched, not called
+// synchronously on every `update()` — a fast pointermove stream (a drag
+// or a future ink stroke) can fire far more than once per animation
+// frame, and applying each one individually means a React re-render (and
+// for a segment, a mounted TipTap/ProseMirror editor re-measuring) for
+// every single one, most of which the browser throws away unpainted
+// anyway. `update()` still records the *latest* value and the burst's
+// bookkeeping (`before`/`sequence`/settle timer) synchronously and
+// immediately — only the expensive `apply()` call itself defers to the
+// next frame, collapsing however many `update()` calls arrived within it
+// into one. `settle()` (called by the timer, or by `flushAll`/
+// `flushOldest` below) always flushes any not-yet-fired frame first —
+// otherwise `getCurrent(id)` at settle time could read a value one frame
+// stale, capturing the wrong `after` for the committed command.
 
 import type { Command } from "./commandStack";
 
@@ -110,7 +125,7 @@ export function flushInSequenceOrder(coalescers: ReadonlyArray<Coalescer<unknown
 }
 
 export interface CoalescerOptions<T> {
-  /** Performs the live mutation — called synchronously and immediately on every `update()`. */
+  /** Performs the live mutation — RAF-batched (NTA-75): called at most once per animation frame, with whichever `value` was most recently passed to `update()` when the frame fires, not on every single `update()` call. */
   apply: (id: string, value: T) => void;
   /** Reads the current value back — called once per burst (before the first `apply`) to capture `before`, and once at settle time to capture the burst's final `after`. */
   getCurrent: (id: string) => T;
@@ -129,8 +144,24 @@ export function createCoalescer<T>(options: CoalescerOptions<T>): Coalescer<T> {
   const settleMs = options.settleMs ?? DEFAULT_SETTLE_MS;
   const isEqual = options.isEqual ?? ((a: T, b: T) => a === b);
   const pending = new Map<string, { before: T; timer: ReturnType<typeof setTimeout>; sequence: number }>();
+  // NTA-75: one scheduled-but-not-yet-fired animation frame per id, at
+  // most — `entry.latestValue` is mutated in place by every `update()`
+  // call that arrives before the frame fires, so the callback (which
+  // closes over `entry`, not over whichever `value` scheduled it) always
+  // applies whatever was most recently set, not a stale first value.
+  const scheduledFrames = new Map<string, { frame: number; latestValue: T }>();
+
+  /** Applies a still-pending frame right now instead of waiting for it to fire — a no-op if nothing is scheduled for `id`. Must run before anything reads `getCurrent(id)`, or it would observe a value one frame stale. */
+  function flushScheduledFrame(id: string) {
+    const scheduled = scheduledFrames.get(id);
+    if (!scheduled) return;
+    scheduledFrames.delete(id);
+    cancelAnimationFrame(scheduled.frame);
+    options.apply(id, scheduled.latestValue);
+  }
 
   function settle(id: string) {
+    flushScheduledFrame(id);
     const entry = pending.get(id);
     if (!entry) return;
     pending.delete(id);
@@ -151,18 +182,37 @@ export function createCoalescer<T>(options: CoalescerOptions<T>): Coalescer<T> {
         // applying, so `before` reflects the state right before this
         // gesture started, not after its first increment. `sequence` is
         // assigned here too, once, for the same reason: it has to mark
-        // when the burst *started*, not when it last changed.
+        // when the burst *started*, not when it last changed. Safe to
+        // read `getCurrent` directly here (not `flushScheduledFrame`
+        // first) — `pending` not having `id` is only possible when no
+        // frame is scheduled for it either, since `settle` (the only
+        // place `pending` entries are removed) always flushes the
+        // scheduled frame first.
         const before = options.getCurrent(id);
         pending.set(id, { before, timer: setTimeout(() => settle(id), settleMs), sequence: sequenceCounter++ });
       }
-      options.apply(id, value);
-      const entry = pending.get(id)!;
-      clearTimeout(entry.timer);
-      entry.timer = setTimeout(() => settle(id), settleMs);
+
+      const existingFrame = scheduledFrames.get(id);
+      if (existingFrame) {
+        existingFrame.latestValue = value;
+      } else {
+        const entry: { frame: number; latestValue: T } = { frame: 0, latestValue: value };
+        entry.frame = requestAnimationFrame(() => {
+          scheduledFrames.delete(id);
+          options.apply(id, entry.latestValue);
+        });
+        scheduledFrames.set(id, entry);
+      }
+
+      const pendingEntry = pending.get(id)!;
+      clearTimeout(pendingEntry.timer);
+      pendingEntry.timer = setTimeout(() => settle(id), settleMs);
     },
     cancelAll() {
       for (const entry of pending.values()) clearTimeout(entry.timer);
       pending.clear();
+      for (const scheduled of scheduledFrames.values()) cancelAnimationFrame(scheduled.frame);
+      scheduledFrames.clear();
     },
     flushAll() {
       // Snapshot ids first — `settle` deletes from `pending` as it goes,

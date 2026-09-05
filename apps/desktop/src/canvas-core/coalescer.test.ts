@@ -31,13 +31,40 @@ function makeHarness(overrides: Partial<Parameters<typeof createCoalescer<number
 }
 
 describe("createCoalescer", () => {
-  it("applies every update live and immediately, synchronously", () => {
+  it("applies live, on the next animation frame — not synchronously (NTA-75: RAF-batched)", () => {
     const { coalescer, values } = makeHarness();
 
     coalescer.update("a", 1);
+    expect(values.get("a")).toBeUndefined(); // not yet — waiting for the frame
+    vi.advanceTimersToNextFrame();
     expect(values.get("a")).toBe(1);
+
     coalescer.update("a", 2);
+    vi.advanceTimersToNextFrame();
     expect(values.get("a")).toBe(2);
+  });
+
+  it("collapses several updates within one frame into a single apply() call, using the latest value", () => {
+    const values = new Map<string, number>();
+    const applyCalls: number[] = [];
+    const coalescer = createCoalescer<number>({
+      getCurrent: (id) => values.get(id) ?? 0,
+      apply: (id, value) => {
+        applyCalls.push(value);
+        values.set(id, value);
+      },
+      commit: () => {},
+      label: () => "Move",
+      settleMs: 100,
+    });
+
+    coalescer.update("a", 1);
+    coalescer.update("a", 2);
+    coalescer.update("a", 3); // all three before the frame fires
+    vi.advanceTimersToNextFrame();
+
+    expect(applyCalls).toEqual([3]); // one apply(), with the latest value — not [1, 2, 3]
+    expect(values.get("a")).toBe(3);
   });
 
   it("commits exactly one command after a burst settles, covering the whole burst's net effect", () => {

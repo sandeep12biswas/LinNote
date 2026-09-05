@@ -4,7 +4,7 @@ import { CREATE_VISIBLE_SEGMENT_COMMAND } from "@linnote/plugin-element-text-seg
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CommandBus } from "../registry";
 import type { SegmentBlock } from "../types";
-import { CanvasViewport } from "./CanvasViewport";
+import { CanvasCoordinatesContext, CanvasViewport } from "./CanvasViewport";
 import { EMPTY_UNDO_STACK_STATE, useCanvasCommandStore } from "./commandStack";
 import { SegmentLayerHost } from "./SegmentLayerHost";
 import { useNotePageStore } from "./index";
@@ -13,9 +13,39 @@ import { createSeedNotePages } from "./mockData";
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
+// A manual stand-in for `requestAnimationFrame`/`cancelAnimationFrame`,
+// used by the drag/resize tests below instead of
+// `vi.useFakeTimers()` + `vi.advanceTimersToNextFrame()` (NTA-75's
+// RAF-batched coalescer — see ./coalescer.ts). That combination works
+// fine in ./coalescer.test.ts's own pure-function tests, but is
+// unreliable *here*: jsdom's `pretendToBeVisual` mode (needed for this
+// file's mounted `SegmentLayer`/`CanvasViewport` components) runs its
+// own real `requestAnimationFrame` driver, and across several
+// sequential tests in one file it sometimes wins the race against
+// vitest's fake-timer-patched one — a scheduled frame silently never
+// fires, and the assertion sees the pre-gesture value. Stubbing the
+// globals directly with a plain array sidesteps jsdom's driver
+// entirely: `flushRaf()` is the only thing that ever invokes a
+// callback, so it's fully deterministic regardless of test order.
+let scheduledRafCallbacks: Array<FrameRequestCallback | undefined> = [];
+
+function flushRaf(): void {
+  const callbacks = scheduledRafCallbacks;
+  scheduledRafCallbacks = [];
+  for (const callback of callbacks) callback?.(0);
+}
+
 beforeEach(() => {
   useNotePageStore.setState({ pages: createSeedNotePages() });
   useCanvasCommandStore.setState({ ...EMPTY_UNDO_STACK_STATE, pageId: null });
+  scheduledRafCallbacks = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    scheduledRafCallbacks.push(callback);
+    return scheduledRafCallbacks.length;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
+    scheduledRafCallbacks[handle - 1] = undefined;
+  });
 });
 
 afterEach(() => {
@@ -27,6 +57,7 @@ afterEach(() => {
     container.remove();
     container = null;
   }
+  vi.unstubAllGlobals();
 });
 
 function mount(children: ReactNode): void {
@@ -135,6 +166,7 @@ describe("SegmentLayerHost", () => {
     dispatchPointerAt(block, "pointerdown", 20, 20); // grabs the border/padding (target === currentTarget)
     dispatchPointerAt(window, "pointermove", 50, 40); // +30, +20
     dispatchPointerAt(window, "pointerup", 50, 40);
+    act(() => flushRaf()); // NTA-75: the move is RAF-batched, not applied synchronously
 
     const updated = useNotePageStore.getState().pages["page-groceries"].elements[0] as SegmentBlock;
     expect(updated.x).toBe(40);
@@ -170,6 +202,7 @@ describe("SegmentLayerHost", () => {
     dispatchPointerAt(handle, "pointerdown", 110, 10); // right edge, at x = 10 + 100
     dispatchPointerAt(window, "pointermove", 150, 10); // +40
     dispatchPointerAt(window, "pointerup", 150, 10);
+    act(() => flushRaf()); // NTA-75: the resize is RAF-batched, not applied synchronously
 
     const updated = useNotePageStore.getState().pages["page-groceries"].elements[0] as SegmentBlock;
     expect(updated.width).toBe(140);
@@ -225,8 +258,9 @@ describe("SegmentLayerHost", () => {
       dispatchPointerAt(block, "pointerdown", 20, 20);
       dispatchPointerAt(window, "pointermove", 50, 40); // +30, +20
       dispatchPointerAt(window, "pointerup", 50, 40);
+      act(() => flushRaf()); // NTA-75: the move is RAF-batched — flush it before checking the live value
 
-      // Not yet settled — no command on the stack, but the live value is already applied (existing behavior, unaffected).
+      // Not yet settled — no command on the stack, but the live value is already applied.
       expect(useCanvasCommandStore.getState().undoStack).toHaveLength(0);
       expect((useNotePageStore.getState().pages["page-groceries"].elements[0] as SegmentBlock).x).toBe(40);
 
@@ -269,5 +303,57 @@ describe("SegmentLayerHost", () => {
     act(() => useNotePageStore.getState().updateElement("page-groceries", "seg-1", (el) => ({ ...el, height: 80 })));
 
     expect(useCanvasCommandStore.getState().undoStack).toHaveLength(0);
+  });
+
+  it("NTA-76: a segment far outside visibleRect never mounts, though its data stays in the store", () => {
+    const near: SegmentBlock = {
+      id: "seg-near",
+      type: "segment",
+      visibility: "visible",
+      x: 10,
+      y: 10,
+      width: 100,
+      height: 30,
+      content: undefined,
+      zIndex: 0,
+    };
+    const far: SegmentBlock = {
+      id: "seg-far",
+      type: "segment",
+      visibility: "visible",
+      x: 100_000,
+      y: 100_000,
+      width: 100,
+      height: 30,
+      content: undefined,
+      zIndex: 0,
+    };
+    useNotePageStore.setState((state) => ({
+      pages: { ...state.pages, "page-groceries": { ...state.pages["page-groceries"], elements: [near, far] } },
+    }));
+    const commandBus = makeFakeCommandBus();
+    // Bypasses CanvasViewport's own real (ResizeObserver-driven)
+    // `visibleRect` — jsdom's ResizeObserver stub (../../vitest.setup.ts)
+    // never actually calls back, so it would stay `null` here regardless
+    // of what's mounted, and this test needs a concrete rect to prove the
+    // filtering itself.
+    mount(
+      <CanvasCoordinatesContext.Provider
+        value={{
+          screenToCanvas: (x, y) => ({ x, y }),
+          pointerPosition: null,
+          setPanSuppressed: () => {},
+          visibleRect: { x: 0, y: 0, width: 800, height: 600 },
+        }}
+      >
+        <SegmentLayerHost pageId="page-groceries" commandBus={commandBus} />
+      </CanvasCoordinatesContext.Provider>,
+    );
+
+    const blocks = container!.querySelectorAll(".segment-block");
+    expect(blocks).toHaveLength(1); // only "seg-near" mounted
+
+    // The model itself is untouched — "seg-far" is still there, just not rendered.
+    expect(useNotePageStore.getState().pages["page-groceries"].elements).toHaveLength(2);
   });
 });
