@@ -24,6 +24,10 @@ tauri-plugin-opener = "2"
 # "open externally" for file attachments / YouTube (§10, §17).
 tauri-plugin-fs = "2"
 tauri-plugin-shell = "2"
+# Native file picker for "Insert File Attachment" (NTA-62, §10.1) — a real
+# OS path is needed so "open externally" has something genuine to open;
+# not needed for the workspace-asset copy itself (Phase 8/NTA-69).
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

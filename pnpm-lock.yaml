@@ -80,6 +80,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
+      '@tauri-apps/plugin-dialog':
+        specifier: ^2
+        version: 2.7.3
       '@tauri-apps/plugin-fs':
         specifier: ^2
         version: 2.5.1
@@ -274,6 +277,12 @@ importers:
       '@linnote/plugin-playground':
         specifier: workspace:*
         version: link:../../packages/plugin-playground
+      '@types/react':
+        specifier: ^19.1.8
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.1.6
+        version: 19.2.5(@types/react@19.2.18)
       '@vitejs/plugin-react':
         specifier: ^4.6.0
         version: 4.7.0(vite@7.3.6)
@@ -289,6 +298,9 @@ importers:
       vite:
         specifier: ^7.0.4
         version: 7.3.6
+      vitest:
+        specifier: ^2.1.4
+        version: 2.1.9(jsdom@30.0.1)
 
   plugins/element-image:
     dependencies:
@@ -395,6 +407,12 @@ importers:
       '@linnote/plugin-playground':
         specifier: workspace:*
         version: link:../../packages/plugin-playground
+      '@types/react':
+        specifier: ^19.1.8
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.1.6
+        version: 19.2.5(@types/react@19.2.18)
       '@vitejs/plugin-react':
         specifier: ^4.6.0
         version: 4.7.0(vite@7.3.6)
@@ -410,6 +428,9 @@ importers:
       vite:
         specifier: ^7.0.4
         version: 7.3.6
+      vitest:
+        specifier: ^2.1.4
+        version: 2.1.9(jsdom@30.0.1)
 
   plugins/format-alignment:
     dependencies:
@@ -1388,6 +1409,9 @@ packages:
     resolution: {integrity: sha512-R8xGtMpwyetawSqm9kYOuMmEqkhUbvcUy8n0aNXIxollKBLESUu5f4Fx+64hgASYm1H+jSWq6jCW6zqTnH6hqQ==}
     engines: {node: '>= 10'}
     hasBin: true
+
+  '@tauri-apps/plugin-dialog@2.7.3':
+    resolution: {integrity: sha512-CRgE+7TP4tvq9MjBU6f04NLTFIqVMLKHk3hAqlhil00ngK9ACTrXPH3oHpKMProxILodd3YjBoKbMwSI4IEcfA==}
 
   '@tauri-apps/plugin-fs@2.5.1':
     resolution: {integrity: sha512-9Lz+Jopp6QyeEWhlpkMx4R/+P9HgR+AVAI4vOZhlT8Xaymtz8iVI/Ov984/XTqgJz/5gz5NretqPB/XEMS3NhQ==}
@@ -2876,6 +2900,10 @@ snapshots:
       '@tauri-apps/cli-win32-arm64-msvc': 2.11.4
       '@tauri-apps/cli-win32-ia32-msvc': 2.11.4
       '@tauri-apps/cli-win32-x64-msvc': 2.11.4
+
+  '@tauri-apps/plugin-dialog@2.7.3':
+    dependencies:
+      '@tauri-apps/api': 2.11.1
 
   '@tauri-apps/plugin-fs@2.5.1':
     dependencies:

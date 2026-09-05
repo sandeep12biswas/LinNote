@@ -269,3 +269,5 @@ export { SegmentLayerHost } from "./SegmentLayerHost";
 export { PageHeader } from "./PageHeader";
 export { BackgroundPicker } from "./BackgroundPicker";
 export { FontColorHost } from "./FontColorHost";
+export { FileAttachmentHost } from "./FileAttachmentHost";
+export { YouTubeEmbedHost } from "./YouTubeEmbedHost";

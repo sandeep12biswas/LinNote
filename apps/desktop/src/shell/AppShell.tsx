@@ -62,9 +62,27 @@
 // same CommandBus-overwrite way, alongside (not inside) `CanvasViewport`
 // — it renders nothing, so it doesn't need to be inside the pan/zoom
 // transform the way `SegmentLayerHost` does.
+//
+// NTA-62/63/64 mount `FileAttachmentHost`/`YouTubeEmbedHost`
+// (../canvas-core/FileAttachmentHost.tsx, ../canvas-core/
+// YouTubeEmbedHost.tsx) as more of `CanvasViewport`'s `children`,
+// alongside `SegmentLayerHost` — same renderer-plus-CommandBus-overwrite
+// role, panning/scaling with the page's other content.
+// `FileAttachmentHost` also takes `registeredPlugins`, which it needs
+// for NTA-65's `fileHandlers` lookup (../shell/index.ts's
+// `buildFileHandlers`) — the same list already threaded into
+// `buildMenuBar`/`buildToolbar` above.
 
 import { useState } from "react";
-import { BackgroundPicker, CanvasViewport, FontColorHost, PageHeader, SegmentLayerHost } from "../canvas-core";
+import {
+  BackgroundPicker,
+  CanvasViewport,
+  FileAttachmentHost,
+  FontColorHost,
+  PageHeader,
+  SegmentLayerHost,
+  YouTubeEmbedHost,
+} from "../canvas-core";
 import { useNavigationStore } from "../store";
 import { buildMenuBar, buildToolbar } from "./index";
 import { MenuBar } from "./MenuBar";
@@ -123,6 +141,8 @@ export function AppShell({ registeredPlugins, onRunCommand, commandBus }: AppShe
                 }
               >
                 <SegmentLayerHost pageId={activePageId} commandBus={commandBus} />
+                <FileAttachmentHost pageId={activePageId} commandBus={commandBus} registeredPlugins={registeredPlugins} />
+                <YouTubeEmbedHost pageId={activePageId} commandBus={commandBus} />
               </CanvasViewport>
             </>
           ) : (
