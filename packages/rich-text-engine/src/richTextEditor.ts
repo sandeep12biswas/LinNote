@@ -25,13 +25,23 @@ export type RichTextDoc = JSONContent;
 /**
  * The shared base extension list every segment's editor is built from
  * (Desing architecture §5): StarterKit (paragraphs, headings, lists,
- * bold, italic, history, ...) plus the extensions that don't ship their
- * own `plugins/format-*` wrapper but that several format plugins need a
+ * bold, italic, ...) plus the extensions that don't ship their own
+ * `plugins/format-*` wrapper but that several format plugins need a
  * common home for — text-style + color (`core.format.font-color`),
  * font-size (`core.format.font-size`, NTA-58 — see ./fontSize.ts for why
  * it lives here rather than in that plugin package), text-align
  * (`core.format.alignment`), task-list/task-item
  * (`core.format.checkbox-list`).
+ *
+ * StarterKit's own `history` (ProseMirror undo/redo) is disabled — NTA-66
+ * (Phase 8): every segment's edits (typing and every format-* plugin's
+ * command alike, since both dispatch through this same editor) now flow
+ * through `apps/desktop/src/canvas-core/commandStack.ts`'s one
+ * page-level undo/redo stack instead, via `onUpdate` ->
+ * `SegmentLayerHost.handleSegmentContentChange` -> its content coalescer
+ * (`./coalescer.ts`). Leaving TipTap's own history enabled alongside that
+ * would maintain a second, per-editor undo stack competing for the same
+ * Ctrl+Z/Ctrl+Shift+Z shortcut.
  *
  * Returns a fresh array on every call — TipTap extension instances are
  * configured per-Editor, so two editors (e.g. two open segments) must
@@ -39,7 +49,7 @@ export type RichTextDoc = JSONContent;
  */
 export function createBaseExtensions(): AnyExtension[] {
   return [
-    StarterKit,
+    StarterKit.configure({ history: false }),
     TextStyle,
     Color,
     FontSize,

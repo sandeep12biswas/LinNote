@@ -36,7 +36,14 @@
 //    than pretending a per-page viewport cache exists. Revisit if a
 //    later ticket wants "reopen a page where you left the view."
 //
-// TODO(phase-8): Command stack (§13), diff-based, capped at ~200 entries.
+// 3. **Command stack (§13, NTA-66/67/68)** — ./commandStack.ts's
+//    `useCanvasCommandStore` + ./coalescer.ts's `createCoalescer`, not
+//    this file; every mutating handler in ./SegmentLayerHost.tsx,
+//    ./FileAttachmentHost.tsx, and ./YouTubeEmbedHost.tsx now routes
+//    through one of those instead of calling `addElement`/`updateElement`
+//    directly. See commandStack.ts's own header comment for the full
+//    design (scope decisions, why formatting needed zero
+//    `plugins/format-*` changes, Ctrl+Z routing).
 
 import { create } from "zustand";
 import { suggestTextColor } from "@linnote/contrast-util";
@@ -160,6 +167,19 @@ export function updateElementInPage(
 }
 
 /**
+ * Pure: returns a new `NotePage` with the element matching `elementId`
+ * removed — a no-op (same `page` reference) if no element with that id
+ * exists. `removeElement` below's zustand wrapper — NTA-66: the `undo`
+ * half of an insert `Command` (segment create, file-attachment/
+ * youtube-embed insert), never called directly by a plugin the way
+ * `addElement` is.
+ */
+export function removeElementFromPage(page: NotePage, elementId: string): NotePage {
+  if (!page.elements.some((element) => element.id === elementId)) return page;
+  return { ...page, elements: page.elements.filter((element) => element.id !== elementId), updatedAt: new Date().toISOString() };
+}
+
+/**
  * Pure: returns a new `NotePage` with `header` replaced by
  * `updater(header)` and `updatedAt` bumped — `updateHeader` below's
  * zustand wrapper. `header` always exists (unlike an element, which may
@@ -211,6 +231,13 @@ interface NotePageState {
    */
   updateElement: (id: string, elementId: string, updater: (element: CanvasElement) => CanvasElement) => void;
   /**
+   * Removes the element matching `elementId` from `id`'s page — NTA-66:
+   * the `undo` half of an insert `Command`, never called directly the
+   * way `addElement` is. No-ops if `id`'s page hasn't been opened/created
+   * yet or has no element with that id.
+   */
+  removeElement: (id: string, elementId: string) => void;
+  /**
    * Replaces `id`'s page `header` via `updater` — NTA-34's `PageHeader`
    * (./PageHeader.tsx) calls this on every title keystroke, date
    * toggle, and alignment change. Get-or-creates the page first (same
@@ -252,6 +279,11 @@ export const useNotePageStore = create<NotePageState>((set, get) => ({
     if (!page) return;
     set({ pages: { ...get().pages, [id]: updateElementInPage(page, elementId, updater) } });
   },
+  removeElement: (id, elementId) => {
+    const page = get().pages[id];
+    if (!page) return;
+    set({ pages: { ...get().pages, [id]: removeElementFromPage(page, elementId) } });
+  },
   updateHeader: (id, updater) => {
     const { pages: withPage, page } = getOrCreatePage(get().pages, id);
     set({ pages: { ...withPage, [id]: updateHeaderInPage(page, updater) } });
@@ -271,3 +303,7 @@ export { BackgroundPicker } from "./BackgroundPicker";
 export { FontColorHost } from "./FontColorHost";
 export { FileAttachmentHost } from "./FileAttachmentHost";
 export { YouTubeEmbedHost } from "./YouTubeEmbedHost";
+export { registerFlushHook, useCanvasCommandStore } from "./commandStack";
+export type { Command } from "./commandStack";
+export { createCoalescer } from "./coalescer";
+export { CanvasUndoRedoControls } from "./CanvasUndoRedoControls";

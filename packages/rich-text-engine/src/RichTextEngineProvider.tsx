@@ -92,6 +92,31 @@ export function RichTextEngineProvider({
     return () => clearActiveEditorIfCurrent(editor);
   }, [editor]);
 
+  // NTA-66 (Phase 8): syncs an externally-changed `content` prop back
+  // INTO an already-mounted editor. `useEditor`'s own `content` option
+  // only seeds the *initial* document at creation — TipTap does not
+  // itself watch for the prop changing on a later render (found by
+  // actually driving the app: undoing a text-edit command correctly
+  // updated the segment's `content` in the store, and the *next* time
+  // this component mounted it would render the reverted content
+  // correctly, but the *already-mounted* editor being undone against
+  // kept showing the pre-undo text — undo appeared to silently do
+  // nothing). The comparison guards against the far more common case —
+  // `content` changing because *this* editor's own `onUpdate` just fired
+  // and the caller's round-trip through the store handed the identical
+  // doc back down — where calling `setContent` would be redundant at
+  // best and, since it's not a no-op internally, risks perturbing
+  // cursor/selection during normal typing for no reason.
+  useEffect(() => {
+    if (!editor) return;
+    const incoming = content ?? null;
+    if (JSON.stringify(editor.getJSON()) === JSON.stringify(incoming)) return;
+    // `emitUpdate` defaults to `false` — this is a content->editor sync,
+    // not a new user edit, so it must not re-fire `onUpdate` and bounce
+    // right back into the store as though it were one.
+    editor.commands.setContent(incoming);
+  }, [editor, content]);
+
   const value = useMemo<RichTextEngineContextValue>(() => ({ editor }), [editor]);
 
   return (

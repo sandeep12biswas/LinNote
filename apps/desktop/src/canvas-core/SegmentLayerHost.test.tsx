@@ -1,10 +1,11 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { CREATE_VISIBLE_SEGMENT_COMMAND } from "@linnote/plugin-element-text-segment";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CommandBus } from "../registry";
 import type { SegmentBlock } from "../types";
 import { CanvasViewport } from "./CanvasViewport";
+import { EMPTY_UNDO_STACK_STATE, useCanvasCommandStore } from "./commandStack";
 import { SegmentLayerHost } from "./SegmentLayerHost";
 import { useNotePageStore } from "./index";
 import { createSeedNotePages } from "./mockData";
@@ -14,6 +15,7 @@ let root: Root | null = null;
 
 beforeEach(() => {
   useNotePageStore.setState({ pages: createSeedNotePages() });
+  useCanvasCommandStore.setState({ ...EMPTY_UNDO_STACK_STATE, pageId: null });
 });
 
 afterEach(() => {
@@ -172,5 +174,100 @@ describe("SegmentLayerHost", () => {
     const updated = useNotePageStore.getState().pages["page-groceries"].elements[0] as SegmentBlock;
     expect(updated.width).toBe(140);
     expect(updated.x).toBe(10); // unchanged
+  });
+
+  it("NTA-66: creating a visible segment pushes an undoable command — undo() removes it", () => {
+    const commandBus = makeFakeCommandBus();
+    mount(
+      <CanvasViewport pageId="page-groceries">
+        <SegmentLayerHost pageId="page-groceries" commandBus={commandBus} />
+      </CanvasViewport>,
+    );
+    const surface = container!.querySelector(".canvas-viewport")!;
+    dispatchPointer(surface, "pointermove");
+    act(() => commandBus.run(CREATE_VISIBLE_SEGMENT_COMMAND));
+    dispatchPointer(surface, "pointerdown");
+    dispatchPointer(surface, "pointerup");
+
+    expect(useNotePageStore.getState().pages["page-groceries"].elements).toHaveLength(1);
+    expect(useCanvasCommandStore.getState().undoStack).toHaveLength(1);
+
+    act(() => useCanvasCommandStore.getState().undo());
+
+    expect(useNotePageStore.getState().pages["page-groceries"].elements).toHaveLength(0);
+  });
+
+  it("NTA-66/67: dragging a segment settles into one undoable command on the canvas stack, restoring x/y on undo", () => {
+    vi.useFakeTimers();
+    try {
+      const existing: SegmentBlock = {
+        id: "seg-1",
+        type: "segment",
+        visibility: "visible",
+        x: 10,
+        y: 10,
+        width: 100,
+        height: 30,
+        content: undefined,
+        zIndex: 0,
+      };
+      useNotePageStore.setState((state) => ({
+        pages: { ...state.pages, "page-groceries": { ...state.pages["page-groceries"], elements: [existing] } },
+      }));
+      const commandBus = makeFakeCommandBus();
+      mount(
+        <CanvasViewport pageId="page-groceries">
+          <SegmentLayerHost pageId="page-groceries" commandBus={commandBus} />
+        </CanvasViewport>,
+      );
+      const block = container!.querySelector(".segment-block") as HTMLElement;
+
+      dispatchPointerAt(block, "pointerdown", 20, 20);
+      dispatchPointerAt(window, "pointermove", 50, 40); // +30, +20
+      dispatchPointerAt(window, "pointerup", 50, 40);
+
+      // Not yet settled — no command on the stack, but the live value is already applied (existing behavior, unaffected).
+      expect(useCanvasCommandStore.getState().undoStack).toHaveLength(0);
+      expect((useNotePageStore.getState().pages["page-groceries"].elements[0] as SegmentBlock).x).toBe(40);
+
+      act(() => vi.advanceTimersByTime(500));
+
+      expect(useCanvasCommandStore.getState().undoStack).toHaveLength(1);
+
+      act(() => useCanvasCommandStore.getState().undo());
+
+      const reverted = useNotePageStore.getState().pages["page-groceries"].elements[0] as SegmentBlock;
+      expect(reverted.x).toBe(10);
+      expect(reverted.y).toBe(10);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("NTA-66: auto-grow height changes are never pushed onto the canvas command stack", () => {
+    const existing: SegmentBlock = {
+      id: "seg-1",
+      type: "segment",
+      visibility: "visible",
+      x: 10,
+      y: 10,
+      width: 100,
+      height: 30,
+      content: undefined,
+      zIndex: 0,
+    };
+    useNotePageStore.setState((state) => ({
+      pages: { ...state.pages, "page-groceries": { ...state.pages["page-groceries"], elements: [existing] } },
+    }));
+    const commandBus = makeFakeCommandBus();
+    mount(
+      <CanvasViewport pageId="page-groceries">
+        <SegmentLayerHost pageId="page-groceries" commandBus={commandBus} />
+      </CanvasViewport>,
+    );
+
+    act(() => useNotePageStore.getState().updateElement("page-groceries", "seg-1", (el) => ({ ...el, height: 80 })));
+
+    expect(useCanvasCommandStore.getState().undoStack).toHaveLength(0);
   });
 });

@@ -14,6 +14,10 @@
 // gesture) — the dialog itself collects the URL and play-mode choice, so
 // unlike FileAttachmentHost.tsx there's no native dialog/file-picker
 // call to make here.
+//
+// NTA-66/67 (Phase 8): move routes through ./coalescer.ts's
+// `createCoalescer`; embed creation through `useCanvasCommandStore`'s
+// `execute` — same pattern, same reasoning, as ./FileAttachmentHost.tsx.
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
@@ -23,6 +27,8 @@ import {
 } from "@linnote/plugin-element-youtube-embed";
 import type { CommandBus } from "../registry";
 import type { CanvasElement, YouTubeEmbed } from "../types";
+import { createCoalescer } from "./coalescer";
+import { registerFlushHook, useCanvasCommandStore } from "./commandStack";
 import { useCanvasCoordinates } from "./CanvasViewport";
 import { useNotePageStore } from "./index";
 
@@ -39,6 +45,7 @@ export interface YouTubeEmbedHostProps {
 export function YouTubeEmbedHost({ pageId, commandBus }: YouTubeEmbedHostProps) {
   const notePage = useNotePageStore((state) => state.pages[pageId]);
   const addElement = useNotePageStore((state) => state.addElement);
+  const removeElement = useNotePageStore((state) => state.removeElement);
   const updateElement = useNotePageStore((state) => state.updateElement);
   const { pointerPosition, screenToCanvas, setPanSuppressed } = useCanvasCoordinates();
 
@@ -46,17 +53,38 @@ export function YouTubeEmbedHost({ pageId, commandBus }: YouTubeEmbedHostProps) 
 
   const handleCreateEmbed = useCallback(
     (embed: YouTubeEmbedData) => {
-      addElement(pageId, embed as CanvasElement);
+      // A one-shot insert, not a burst — same reasoning as
+      // SegmentLayerHost's `handleCreateSegment`.
+      useCanvasCommandStore.getState().execute({
+        label: "Insert YouTube embed",
+        execute: () => addElement(pageId, embed as CanvasElement),
+        undo: () => removeElement(pageId, embed.id),
+      });
     },
-    [addElement, pageId],
+    [addElement, removeElement, pageId],
   );
 
-  const handleMoveEmbed = useCallback(
-    (id: string, x: number, y: number) => {
-      updateElement(pageId, id, (element) => ({ ...element, x, y }) as CanvasElement);
-    },
-    [pageId, updateElement],
+  const moveCoalescer = useMemo(
+    () =>
+      createCoalescer<{ x: number; y: number }>({
+        getCurrent: (id) => {
+          const embed = useNotePageStore.getState().pages[pageId]?.elements.find((el) => el.id === id);
+          return embed && isYouTubeEmbed(embed) ? { x: embed.x, y: embed.y } : { x: 0, y: 0 };
+        },
+        apply: (id, { x, y }) => updateElement(pageId, id, (element) => ({ ...element, x, y }) as CanvasElement),
+        commit: (command) => useCanvasCommandStore.getState().commit(command),
+        label: () => "Move YouTube embed",
+        isEqual: (a, b) => a.x === b.x && a.y === b.y,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pageId],
   );
+  useEffect(() => () => moveCoalescer.cancelAll(), [moveCoalescer]);
+  // See ./SegmentLayerHost.tsx's own identical effect + ./commandStack.ts's
+  // `registerFlushHook` doc comment for why.
+  useEffect(() => registerFlushHook(() => moveCoalescer.flushAll()), [moveCoalescer]);
+
+  const handleMoveEmbed = useCallback((id: string, x: number, y: number) => moveCoalescer.update(id, { x, y }), [moveCoalescer]);
 
   // Same "stash the plugin's own arm trigger in a ref" pattern as
   // ./SegmentLayerHost.tsx's `armCreateVisibleRef` — the effect below

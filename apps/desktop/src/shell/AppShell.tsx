@@ -72,10 +72,17 @@
 // for NTA-65's `fileHandlers` lookup (../shell/index.ts's
 // `buildFileHandlers`) — the same list already threaded into
 // `buildMenuBar`/`buildToolbar` above.
+//
+// NTA-66 (Phase 8) mounts `CanvasUndoRedoControls`
+// (../canvas-core/CanvasUndoRedoControls.tsx) next to `BreadcrumbTrail`
+// — outside `CanvasViewport`'s pan/zoom transform (it's UI chrome, not
+// page content), same reasoning as `PageHeader`/`BackgroundPicker` living
+// in the `header` slot rather than `children`.
 
 import { useState } from "react";
 import {
   BackgroundPicker,
+  CanvasUndoRedoControls,
   CanvasViewport,
   FileAttachmentHost,
   FontColorHost,
@@ -130,6 +137,7 @@ export function AppShell({ registeredPlugins, onRunCommand, commandBus }: AppShe
           <BreadcrumbTrail />
           {activePageId ? (
             <>
+              <CanvasUndoRedoControls />
               <FontColorHost pageId={activePageId} commandBus={commandBus} />
               <CanvasViewport
                 pageId={activePageId}

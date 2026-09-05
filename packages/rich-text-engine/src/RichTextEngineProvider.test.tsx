@@ -2,7 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Extension, type Editor } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getActiveEditor, setActiveEditor } from "./activeEditor";
 import type { RichTextDoc } from "./richTextEditor";
 import { RichTextEngineProvider, useRichTextEditor } from "./RichTextEngineProvider";
@@ -95,6 +95,65 @@ describe("RichTextEngineProvider", () => {
     expect(lastChange.content?.[0]).toMatchObject({
       content: [{ type: "text", text: "Start!" }],
     });
+  });
+
+  // NTA-66 (Phase 8): `content` re-syncing into an already-mounted editor
+  // — found necessary by actually driving the app: undo/redo mutates a
+  // segment's `content` in the store, but re-rendering with a new
+  // `content` prop alone did nothing to the *live* editor before this
+  // fix (TipTap's `content` option only seeds the doc at creation).
+  it("re-rendering with a new content prop pushes it into the already-mounted editor (e.g. undo reverting a segment's text)", () => {
+    const holder = makeEditorHolder();
+    const before: RichTextDoc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Before" }] }] };
+    const after: RichTextDoc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "After" }] }] };
+
+    function Wrapper({ content }: { content?: RichTextDoc }) {
+      return (
+        <RichTextEngineProvider content={content}>
+          <ProbeInner />
+        </RichTextEngineProvider>
+      );
+    }
+    function ProbeInner() {
+      holder.editor = useRichTextEditor();
+      return null;
+    }
+
+    mount(<Wrapper content={before} />);
+    expect(holder.editor?.getText()).toBe("Before");
+
+    act(() => root!.render(<Wrapper content={after} />));
+
+    expect(holder.editor?.getText()).toBe("After");
+  });
+
+  it("does not call setContent when the incoming content prop already matches the editor's own current doc (e.g. its own onChange round-tripping back down unchanged)", () => {
+    const initialDoc: RichTextDoc = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "Same" }] }],
+    };
+    const holder = makeEditorHolder();
+    function Wrapper({ content }: { content?: RichTextDoc }) {
+      return (
+        <RichTextEngineProvider content={content}>
+          <ProbeInner />
+        </RichTextEngineProvider>
+      );
+    }
+    function ProbeInner() {
+      holder.editor = useRichTextEditor();
+      return null;
+    }
+
+    mount(<Wrapper content={initialDoc} />);
+    const setContentSpy = vi.spyOn(holder.editor!.commands, "setContent");
+
+    // Re-render with a *new object*, same content — the exact shape a
+    // round-trip through the store produces (a fresh JSON snapshot, not
+    // the same reference), which must NOT re-call setContent.
+    act(() => root!.render(<Wrapper content={{ ...initialDoc, content: [...initialDoc.content!] }} />));
+
+    expect(setContentSpy).not.toHaveBeenCalled();
   });
 
   it("layers a caller-supplied extension in without replacing the base list", () => {

@@ -37,6 +37,7 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import type { NotePage } from "../types";
+import { useCanvasCommandStore } from "./commandStack";
 import { DEFAULT_VIEWPORT, panViewport, useNotePageStore, zoomViewport, type Viewport } from "./index";
 
 export interface CanvasViewportProps {
@@ -114,6 +115,16 @@ export function CanvasViewport({ pageId, header, children }: CanvasViewportProps
   // per-page pan/zoom position yet.
   useEffect(() => {
     setViewport(DEFAULT_VIEWPORT);
+  }, [pageId]);
+
+  // NTA-66: the canvas command stack is also one-per-open-page — reset
+  // it here too, alongside the viewport, rather than in some third place,
+  // since this is already the "runs once per pageId change" effect every
+  // other per-page reset in this file lives in. A stack left over from
+  // the previous open page would let Ctrl+Z on this one undo edits that
+  // belong to a different page entirely.
+  useEffect(() => {
+    useCanvasCommandStore.getState().resetForPage(pageId);
   }, [pageId]);
 
   const surfaceRef = useRef<HTMLDivElement>(null);

@@ -165,6 +165,18 @@ from repo root, not here, if you touched `plugins/*`.
 
 ## Gotchas
 
+- **Zero-delay synthetic typing can silently drop the first few
+  characters of a segment's text — a pre-existing race, not specific to
+  any one feature.** Confirmed present on unmodified `main`/`develop`
+  too (not something a later change introduced): typing a string with
+  `page.keyboard.type(text)` (no delay) into a fresh segment,
+  immediately followed by Ctrl+A + a Format-menu command, sometimes
+  drops a leading substring (`"Hello Undo Test"` -> `"lo Undo Test"`)
+  — flaky, varies run to run, same script. `type` in this driver
+  already uses `{ delay: 20 }` for exactly this reason; don't remove it
+  chasing "faster" test scripts, and don't assume a truncated string
+  means a bug in whatever you're actually testing — rerun once before
+  concluding that.
 - **The app hangs forever on "Loading plugins…" without the IPC mock.**
   Every `core.*` plugin's `activate()` reads/writes plugin-settings via
   `@tauri-apps/plugin-fs`, which calls

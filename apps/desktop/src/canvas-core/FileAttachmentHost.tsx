@@ -28,6 +28,11 @@
 //    (NTA-65) — lets a future per-extension preview/open plugin pre-empt
 //    FileAttachmentLayer's own default "open externally" without this
 //    host or that plugin needing to know about each other directly.
+//
+// NTA-66/67 (Phase 8): move now routes through ./coalescer.ts's
+// `createCoalescer` (same reasoning as ./SegmentLayerHost.tsx's own
+// move/resize channels); insert goes through `useCanvasCommandStore`'s
+// `execute` — a one-shot action, undone via the store's `removeElement`.
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { open as openFilePicker } from "@tauri-apps/plugin-dialog";
@@ -44,6 +49,8 @@ import {
 import type { CommandBus, RegisteredPlugin } from "../registry";
 import { buildFileHandlers } from "../shell";
 import type { CanvasElement, FileAttachment } from "../types";
+import { createCoalescer } from "./coalescer";
+import { registerFlushHook, useCanvasCommandStore } from "./commandStack";
 import { useCanvasCoordinates } from "./CanvasViewport";
 import { useNotePageStore } from "./index";
 
@@ -62,6 +69,7 @@ export interface FileAttachmentHostProps {
 export function FileAttachmentHost({ pageId, commandBus, registeredPlugins }: FileAttachmentHostProps) {
   const notePage = useNotePageStore((state) => state.pages[pageId]);
   const addElement = useNotePageStore((state) => state.addElement);
+  const removeElement = useNotePageStore((state) => state.removeElement);
   const updateElement = useNotePageStore((state) => state.updateElement);
   const { screenToCanvas, setPanSuppressed } = useCanvasCoordinates();
 
@@ -77,11 +85,29 @@ export function FileAttachmentHost({ pageId, commandBus, registeredPlugins }: Fi
     [fileHandlers, commandBus, attachments],
   );
 
+  const moveCoalescer = useMemo(
+    () =>
+      createCoalescer<{ x: number; y: number }>({
+        getCurrent: (id) => {
+          const attachment = useNotePageStore.getState().pages[pageId]?.elements.find((el) => el.id === id);
+          return attachment && isFileAttachment(attachment) ? { x: attachment.x, y: attachment.y } : { x: 0, y: 0 };
+        },
+        apply: (id, { x, y }) => updateElement(pageId, id, (element) => ({ ...element, x, y }) as CanvasElement),
+        commit: (command) => useCanvasCommandStore.getState().commit(command),
+        label: () => "Move file attachment",
+        isEqual: (a, b) => a.x === b.x && a.y === b.y,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pageId],
+  );
+  useEffect(() => () => moveCoalescer.cancelAll(), [moveCoalescer]);
+  // See ./SegmentLayerHost.tsx's own identical effect + ./commandStack.ts's
+  // `registerFlushHook` doc comment for why.
+  useEffect(() => registerFlushHook(() => moveCoalescer.flushAll()), [moveCoalescer]);
+
   const handleMoveAttachment = useCallback(
-    (id: string, x: number, y: number) => {
-      updateElement(pageId, id, (element) => ({ ...element, x, y }) as CanvasElement);
-    },
-    [pageId, updateElement],
+    (id: string, x: number, y: number) => moveCoalescer.update(id, { x, y }),
+    [moveCoalescer],
   );
 
   // `attachments` closes over `notePage`, which changes across
@@ -110,7 +136,14 @@ export function FileAttachmentHost({ pageId, commandBus, registeredPlugins }: Fi
         assetPath: path, // TODO(phase-8/NTA-69): copy into assets/<pageId>/... once FileSystemPersistenceProvider exists
         zIndex: nextZIndex(attachmentsRef.current),
       };
-      addElement(pageId, attachment as CanvasElement);
+      // A one-shot insert, not a burst — `execute` (runs immediately +
+      // pushes), not `commit` (which assumes the mutation already
+      // happened), same as SegmentLayerHost's `handleCreateSegment`.
+      useCanvasCommandStore.getState().execute({
+        label: "Insert file attachment",
+        execute: () => addElement(pageId, attachment as CanvasElement),
+        undo: () => removeElement(pageId, attachment.id),
+      });
     }
 
     commandBus.register(INSERT_FILE_ATTACHMENT_COMMAND, () => {
@@ -119,7 +152,7 @@ export function FileAttachmentHost({ pageId, commandBus, registeredPlugins }: Fi
       });
     });
     return () => commandBus.unregister(INSERT_FILE_ATTACHMENT_COMMAND);
-  }, [pageId, commandBus, addElement]);
+  }, [pageId, commandBus, addElement, removeElement]);
 
   if (!notePage) return null;
 

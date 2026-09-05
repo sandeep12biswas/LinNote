@@ -152,7 +152,12 @@ const COMMANDS = {
 
   async type(text) {
     if (!page) return console.log("ERROR: launch first");
-    await page.keyboard.type(text);
+    // A small per-character delay, not zero — see SKILL.md's Gotchas:
+    // zero-delay synthetic typing can outrun TipTap/ProseMirror's own
+    // keystroke handling and silently drop the first few characters
+    // (a pre-existing app race, confirmed present on unmodified code
+    // too — not specific to any one feature).
+    await page.keyboard.type(text, { delay: 20 });
     console.log("typed:", JSON.stringify(text));
   },
 
@@ -208,6 +213,20 @@ const COMMANDS = {
     console.log("mouse-clicked", x, y);
   },
 
+  // `mouse-drag <x1> <y1> <x2> <y2>` — a real pointer down/move/up
+  // sequence at raw viewport coordinates, for exercising a drag gesture
+  // (segment move/resize, file-attachment/youtube-embed move) the same
+  // way a user's mouse would, not a synthetic single click.
+  async "mouse-drag"(args) {
+    if (!page) return console.log("ERROR: launch first");
+    const [x1, y1, x2, y2] = args.split(" ").map(Number);
+    await page.mouse.move(x1, y1);
+    await page.mouse.down();
+    await page.mouse.move(x2, y2, { steps: 5 });
+    await page.mouse.up();
+    console.log("mouse-dragged", { x1, y1, x2, y2 });
+  },
+
   // Raw mouse click at the center of a selector's bounding box — useful
   // when you need the *real* pointer coordinates (e.g. testing a drag
   // gesture's own pointermove math, not just "does the click handler run").
@@ -219,6 +238,19 @@ const COMMANDS = {
     if (!box) return console.log("NOT_FOUND:", sel);
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     console.log("mouse-clicked center of", sel, box);
+  },
+
+  // Evaluates `code` (a JS expression) INSIDE the page — passed as a
+  // string so Playwright serializes it into the page's own context,
+  // never the driver's Node context (which has no `window`/`document`).
+  async eval(code) {
+    if (!page) return console.log("ERROR: launch first");
+    try {
+      const result = await page.evaluate(`(() => (${code}))()`);
+      console.log(JSON.stringify(result));
+    } catch (e) {
+      console.log("ERROR:", e.message);
+    }
   },
 
   async "invoke-log"() {

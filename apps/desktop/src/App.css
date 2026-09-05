@@ -594,6 +594,24 @@ button {
   cursor: default;
 }
 
+/* NTA-66 — canvas command stack's own Undo/Redo, mirroring
+   .folder-tree__undo-bar's styling for the structural stack. */
+.canvas-undo-redo {
+  display: flex;
+  gap: 0.4em;
+  padding: 0.3em 0;
+}
+
+.canvas-undo-redo button {
+  font-size: 0.8em;
+  padding: 0.2em 0.6em;
+}
+
+.canvas-undo-redo button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* NTA-56: `.folder-tree`/`.folder-tree__viewport`/`.page-list__viewport`
    must each fill the vertical space their parent gives them (rather than
    sizing to content, as before) — `react-window`'s `FixedSizeList` needs

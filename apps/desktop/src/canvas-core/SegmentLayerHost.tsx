@@ -26,12 +26,28 @@
 //
 // NTA-40 adds `handleHeightChange`/`handleResizeSegment` — same
 // updateElement-based pattern as the move/content-change handlers above.
+//
+// NTA-66/67 (Phase 8): move, resize, and content-change now route
+// through ./coalescer.ts's `createCoalescer` instead of calling
+// `updateElement` directly — each still applies live/synchronously
+// (`SegmentLayer`'s own gestures, and every existing test asserting on
+// `useNotePageStore` state right after a pointer event, are unaffected),
+// but the whole burst also settles into one `Command` on
+// `useCanvasCommandStore` a moment later. `handleSegmentContentChange`
+// is what unifies *formatting* into the same stack too, with zero
+// changes to any `plugins/format-*` package — see ./commandStack.ts's
+// header comment for why. `handleCreateSegment` (a one-shot, not a
+// burst) goes through the store's `execute` instead, wrapped as its own
+// undoable insert. `handleHeightChange` deliberately does NOT — auto-grow
+// height is measured, not a gesture (same header comment).
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { CREATE_VISIBLE_SEGMENT_COMMAND, SegmentLayer, type SegmentBlockData } from "@linnote/plugin-element-text-segment";
 import type { RichTextDoc } from "@linnote/rich-text-engine";
 import type { CommandBus } from "../registry";
 import type { CanvasElement, SegmentBlock } from "../types";
+import { createCoalescer, flushInSequenceOrder } from "./coalescer";
+import { registerFlushHook, useCanvasCommandStore } from "./commandStack";
 import { useCanvasCoordinates } from "./CanvasViewport";
 import { useNotePageStore } from "./index";
 
@@ -59,6 +75,7 @@ export interface SegmentLayerHostProps {
 export function SegmentLayerHost({ pageId, commandBus }: SegmentLayerHostProps) {
   const notePage = useNotePageStore((state) => state.pages[pageId]);
   const addElement = useNotePageStore((state) => state.addElement);
+  const removeElement = useNotePageStore((state) => state.removeElement);
   const updateElement = useNotePageStore((state) => state.updateElement);
   const { pointerPosition, screenToCanvas, setPanSuppressed } = useCanvasCoordinates();
 
@@ -67,27 +84,106 @@ export function SegmentLayerHost({ pageId, commandBus }: SegmentLayerHostProps) 
     [notePage],
   );
 
+  function findSegment(id: string): SegmentBlock | undefined {
+    const element = useNotePageStore.getState().pages[pageId]?.elements.find((candidate) => candidate.id === id);
+    return element && isSegment(element) ? element : undefined;
+  }
+
+  // One coalescer per mutation "channel" (NTA-67), recreated whenever
+  // `pageId` changes — `cancelAll()` on the outgoing instance below (in
+  // the same effect that clears them) is what stops a stale burst from
+  // this page settling later against a *different* one after a switch.
+  const moveCoalescer = useMemo(
+    () =>
+      createCoalescer<{ x: number; y: number }>({
+        getCurrent: (id) => {
+          const segment = findSegment(id);
+          return { x: segment?.x ?? 0, y: segment?.y ?? 0 };
+        },
+        apply: (id, { x, y }) => updateElement(pageId, id, (element) => ({ ...element, x, y }) as CanvasElement),
+        commit: (command) => useCanvasCommandStore.getState().commit(command),
+        label: () => "Move segment",
+        isEqual: (a, b) => a.x === b.x && a.y === b.y,
+      }),
+    // findSegment/updateElement close over pageId, which is already this memo's own key — recreated together, nothing exhaustive-deps would catch is actually stale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pageId],
+  );
+  const resizeCoalescer = useMemo(
+    () =>
+      createCoalescer<{ x: number; width: number }>({
+        getCurrent: (id) => {
+          const segment = findSegment(id);
+          return { x: segment?.x ?? 0, width: segment?.width ?? 0 };
+        },
+        apply: (id, { x, width }) => updateElement(pageId, id, (element) => ({ ...element, x, width }) as CanvasElement),
+        commit: (command) => useCanvasCommandStore.getState().commit(command),
+        label: () => "Resize segment",
+        isEqual: (a, b) => a.x === b.x && a.width === b.width,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pageId],
+  );
+  const contentCoalescer = useMemo(
+    () =>
+      createCoalescer<RichTextDoc | undefined>({
+        getCurrent: (id) => findSegment(id)?.content as RichTextDoc | undefined,
+        apply: (id, content) => updateElement(pageId, id, (element) => ({ ...element, content }) as CanvasElement),
+        commit: (command) => useCanvasCommandStore.getState().commit(command),
+        label: () => "Edit text",
+        isEqual: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pageId],
+  );
+
+  useEffect(
+    () => () => {
+      moveCoalescer.cancelAll();
+      resizeCoalescer.cancelAll();
+      contentCoalescer.cancelAll();
+    },
+    [moveCoalescer, resizeCoalescer, contentCoalescer],
+  );
+
+  // Registers this Host's combined flush with ../canvas-core/commandStack.ts's
+  // undo/redo (see registerFlushHook's own doc comment for why) — must
+  // stay registered for as long as these coalescers are the live ones
+  // (same dependency list as the cancelAll effect above), not just on
+  // mount, since `pageId` changing recreates every coalescer above.
+  useEffect(
+    () => registerFlushHook(() => flushInSequenceOrder([moveCoalescer, resizeCoalescer, contentCoalescer])),
+    [moveCoalescer, resizeCoalescer, contentCoalescer],
+  );
+
   const handleCreateSegment = useCallback(
     (segment: SegmentBlockData) => {
-      addElement(pageId, segment as SegmentBlock);
+      // A one-shot insert, not a burst — goes through `execute` (runs
+      // immediately + pushes), not `commit` (which assumes the mutation
+      // already happened).
+      useCanvasCommandStore.getState().execute({
+        label: "Create segment",
+        execute: () => addElement(pageId, segment as SegmentBlock),
+        undo: () => removeElement(pageId, segment.id),
+      });
     },
-    [addElement, pageId],
+    [addElement, removeElement, pageId],
   );
 
   const handleSegmentContentChange = useCallback(
-    (id: string, content: RichTextDoc) => {
-      updateElement(pageId, id, (element) => ({ ...element, content }) as CanvasElement);
-    },
-    [pageId, updateElement],
+    (id: string, content: RichTextDoc) => contentCoalescer.update(id, content),
+    [contentCoalescer],
   );
 
   const handleMoveSegment = useCallback(
-    (id: string, x: number, y: number) => {
-      updateElement(pageId, id, (element) => ({ ...element, x, y }) as CanvasElement);
-    },
-    [pageId, updateElement],
+    (id: string, x: number, y: number) => moveCoalescer.update(id, { x, y }),
+    [moveCoalescer],
   );
 
+  // Deliberately NOT coalesced/commanded (NTA-66 scope decision) —
+  // auto-grow height is a `ResizeObserver` measurement, not a user
+  // gesture; wrapping it in undo history would mean undoing an unrelated
+  // action also silently snapped a segment back to a stale height.
   const handleHeightChange = useCallback(
     (id: string, height: number) => {
       updateElement(pageId, id, (element) => ({ ...element, height }) as CanvasElement);
@@ -96,10 +192,8 @@ export function SegmentLayerHost({ pageId, commandBus }: SegmentLayerHostProps) 
   );
 
   const handleResizeSegment = useCallback(
-    (id: string, x: number, width: number) => {
-      updateElement(pageId, id, (element) => ({ ...element, x, width }) as CanvasElement);
-    },
-    [pageId, updateElement],
+    (id: string, x: number, width: number) => resizeCoalescer.update(id, { x, width }),
+    [resizeCoalescer],
   );
 
   // `SegmentLayer` hands us its own "arm the visible-creation gesture"
