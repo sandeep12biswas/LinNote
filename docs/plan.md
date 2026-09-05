@@ -148,8 +148,8 @@ background/segments. Added 2026-09-01 to close that gap; built
   checked distance to sampled points, not the segments between them (a
   sparse pointermove stream left gaps); and pan wasn't actually suppressed
   for the drag that armed it (the same NTA-38 event-ordering timing issue
-  `SegmentLayer.tsx` already documents). Unblocks NTA-73/74 (Phase 9),
-  though those remain unbuilt.
+  `SegmentLayer.tsx` already documents). Unblocked NTA-73/74 (Phase 9),
+  now built — see that phase's own entry below.
   - NTA-91 ✅ Stroke capture & rendering: pointer capture, perfect-freehand outline, Path2D paint
   - NTA-92 ✅ Tool selection: pen/highlighter/eraser modes, color & size, toolbar-armed draw gesture
   - NTA-93 ✅ Eraser: whole-stroke and pixel/segment erase modes
@@ -223,9 +223,9 @@ full `FileSystemPersistenceProvider` (tree/page/asset read-write, autosave).
 Tiled canvases, virtualized panes/segments, per-plugin code-splitting.
 
 - **NTA-47** (Story) 🟡 — Phase 9: Performance pass — **partial**, committed
-  on `feature/module-build` (2026-09-05, `51de215`): NTA-75/76 done; NTA-73/74
-  are now unblocked (Ink/NTA-90 landed 2026-09-05) but not yet themselves
-  built; NTA-77 deferred as its own follow-up pass. RAF batching (NTA-75):
+  on `feature/module-build` (2026-09-05, `51de215` then a later commit for
+  NTA-73/74): NTA-75/76/73/74 done; NTA-77 deferred as its own follow-up
+  pass, so the phase itself stays open. RAF batching (NTA-75):
   `apps/desktop/src/canvas-core/coalescer.ts`'s `apply()` now runs on the next
   animation frame instead of synchronously on every `update()` — a fast
   pointermove stream collapses into one `apply()` per frame, using whichever
@@ -240,9 +240,22 @@ Tiled canvases, virtualized panes/segments, per-plugin code-splitting.
   driver that can race vitest's fake-timer-patched one across sequential
   tests in one file — `SegmentLayerHost.test.tsx` now stubs
   `requestAnimationFrame`/`cancelAnimationFrame` directly rather than relying
-  on `vi.useFakeTimers()` for frame timing.
-  - NTA-73 ⚪ Tiled ink canvases: viewport-intersecting tiles only — unblocked (Ink/NTA-90 done), not yet built
-  - NTA-74 ⚪ Static vs. active ink layer split — unblocked (Ink/NTA-90 done), not yet built
+  on `vi.useFakeTimers()` for frame timing. Tiled ink rendering +
+  static/active split (NTA-73/74): `plugins/element-ink/src/ink.ts`'s
+  `computeVisibleTiles` divides canvas-space into a fixed 1024-unit grid
+  (`INK_TILE_SIZE`) and keeps only the tiles intersecting the host's
+  `visibleRect` expanded by a 512-unit `INK_TILE_OVERSCAN` (same
+  don't-unmount-at-the-edge reasoning as NTA-76's own overscan margin) —
+  each mounts its own `<canvas>` (`InkLayer.tsx`'s `memo`-wrapped
+  `InkTileCanvas`), painting only the committed strokes
+  `bucketStrokesByTile` says intersect it. The in-progress pen/highlighter
+  stroke paints onto its own small overlay canvas instead, sized to just
+  its own bounds and repainted every `pointermove` — committed tiles never
+  redraw while it's live. The eraser's live preview wasn't given its own
+  overlay (neither ticket asked for it); the same `memo` comparison still
+  keeps it from repainting any tile its working set doesn't actually touch.
+  - NTA-73 ✅ Tiled ink canvases: viewport-intersecting tiles only
+  - NTA-74 ✅ Static vs. active ink layer split
   - NTA-75 ✅ RAF batching for pointer-driven state updates
   - NTA-76 ✅ Virtualized segment rendering
   - NTA-77 ⚪ Per-plugin code-splitting — deferred, own follow-up pass
@@ -329,9 +342,9 @@ what used to be gaps. Rough build order, with reasoning:
 6. ✅ Phase 8 — Undo/redo & full persistence (NTA-46) — done as of
    2026-09-05.
 7. 🟡 Phase 9 — Performance pass (NTA-47) — **partial** as of 2026-09-05:
-   NTA-75/76 done; NTA-77 deferred as its own follow-up pass.
+   NTA-75/76/73/74 done; NTA-77 deferred as its own follow-up pass.
 8. ✅ **Cross-cutting — Ink drawing (NTA-90) — done as of 2026-09-05.**
-   Unblocks NTA-73/74 (Phase 9, above), though those remain unbuilt.
+   Unblocked NTA-73/74 (Phase 9, above), now also done.
 9. Phase 10 — Cloud sync, build (NTA-48).
 10. Phase 11 — Stretch (not scheduled, no Jira story — intentionally last).
 

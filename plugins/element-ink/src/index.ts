@@ -47,14 +47,22 @@ export const plugin: Plugin = {
 export default plugin;
 
 export {
+  bucketStrokesByTile,
   computeEraseDiff,
   computeStrokesBounds,
+  computeVisibleTiles,
   eraseAtPoint,
+  INK_TILE_OVERSCAN,
+  INK_TILE_SIZE,
+  inkTileKey,
   nextZIndex,
+  strokeBounds,
   strokeOutlinePath,
   strokeTouchesPoint,
   type InkPoint,
+  type InkRect,
   type InkStrokeData,
+  type InkTile,
   type InkTool,
 } from "./ink";
 export { InkLayer, TOGGLE_INK_PANEL_COMMAND, type CanvasPoint, type InkLayerProps } from "./InkLayer";

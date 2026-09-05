@@ -57,7 +57,10 @@ export function InkLayerHost({ pageId, commandBus }: InkLayerHostProps) {
   const notePage = useNotePageStore((state) => state.pages[pageId]);
   const addElement = useNotePageStore((state) => state.addElement);
   const removeElement = useNotePageStore((state) => state.removeElement);
-  const { pointerPosition, screenToCanvas, setPanSuppressed } = useCanvasCoordinates();
+  // `visibleRect` drives NTA-73's tile culling inside `InkLayer` itself —
+  // this host just forwards it, same "narrow the app's real type down to
+  // whatever the portable plugin needs" role as every other prop below.
+  const { pointerPosition, screenToCanvas, setPanSuppressed, visibleRect } = useCanvasCoordinates();
 
   const strokes: InkStrokeData[] = useMemo(
     () => (notePage ? notePage.elements.filter(isInkStroke) : []),
@@ -122,6 +125,7 @@ export function InkLayerHost({ pageId, commandBus }: InkLayerHostProps) {
       screenToCanvas={screenToCanvas}
       setPanSuppressed={setPanSuppressed}
       onTogglePanelReady={handleTogglePanelReady}
+      visibleRect={visibleRect}
     />
   );
 }

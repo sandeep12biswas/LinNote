@@ -1,5 +1,5 @@
 // InkStroke renderer + tool selection + drawing/erasing gestures
-// (NTA-90/91/92/93). Mounted by
+// (NTA-90/91/92/93), tiled + static/active split (NTA-73/74). Mounted by
 // apps/desktop/src/canvas-core/InkLayerHost.tsx as one of
 // `CanvasViewport`'s `children`, alongside `SegmentLayer`
 // (plugins/element-text-segment) — same direct-import-from-the-app-side
@@ -8,7 +8,7 @@
 // stays portable — no import from apps/desktop/src/*, same boundary
 // every other element-* plugin's own layer component already follows.
 //
-// Three responsibilities:
+// Four responsibilities:
 //
 // 1. NTA-91 — Stroke capture & rendering: while a pen/highlighter tool is
 //    active, a primary-button drag anywhere over the canvas (gated on
@@ -21,19 +21,15 @@
 //    full-viewport size to hang pointer capture off, so `screenToCanvas`/
 //    `pointerPosition` (host-supplied) are the only coordinate source
 //    needed. `./ink.ts`'s `strokeOutlinePath` turns the sampled points
-//    into a `perfect-freehand` tapered outline, painted as a `Path2D` on
-//    one `<canvas>` element sized to the bounding box of every stroke on
-//    the page (`./ink.ts`'s `computeStrokesBounds`) — not yet tiled
-//    per-viewport-region the way docs/architecture.md §5 eventually
-//    wants (that's NTA-73/74's own job; this is "the single-canvas,
-//    functionally-complete first version those later optimize," per
-//    NTA-90's own text). `pointerup` commits the finished stroke via
-//    `onCommitStroke`. `touch-action: none` is already set on
-//    `.canvas-viewport` itself (apps/desktop/src/App.css, NTA-33) — that
-//    already covers this gesture too, verified by inspection since jsdom
-//    can't simulate a real touch/pen contact's native-scroll behavior
-//    either way (same category of "can't verify in this test environment"
-//    as that file's own auto-grow-height note).
+//    into a `perfect-freehand` tapered outline, painted as a `Path2D`.
+//    `pointerup` commits the finished stroke via `onCommitStroke`.
+//    `touch-action: none` (already set on `.canvas-viewport` itself,
+//    NTA-33) satisfies "no native scroll/zoom on pen/touch." Real build
+//    done, NTA-90/91/92/93 (2026-09-05) as one page-wide `<canvas>` —
+//    NTA-73/74 below replace that single canvas with tiled rendering and
+//    a static/active split, per docs/architecture.md §5's "tiled
+//    per-viewport-region rendering is NTA-73/74's later optimization"
+//    note.
 //
 // 2. NTA-92 — Tool selection: a toolbar/menu command
 //    (`TOGGLE_INK_PANEL_COMMAND`, installed for real by
@@ -64,17 +60,65 @@
 //    pre-drag snapshot (`./ink.ts`'s `computeEraseDiff`) and hands both to
 //    `onEraseStrokes` — `InkLayerHost.tsx` is what turns that into one
 //    undoable `Command` covering the whole drag, per the ticket's "both
-//    undoable."
+//    undoable." The eraser's live preview isn't given its own overlay
+//    canvas the way a pen/highlighter stroke is (point 4 below) — neither
+//    NTA-73 nor NTA-74 asks for that, and `<InkTileCanvas>`'s own
+//    `sameStrokes` memo comparison already keeps an erase drag from
+//    repainting any tile its working set doesn't actually touch, which is
+//    as far as this ticket pair's scope goes.
+//
+// 4. NTA-73/74 — Tiled rendering + static/active layer split:
+//    canvas-space is divided into a fixed `INK_TILE_SIZE`-unit grid
+//    (`./ink.ts`'s `computeVisibleTiles`); only tiles intersecting
+//    `visibleRect` (host-supplied, expanded by `INK_TILE_OVERSCAN` the
+//    same "don't unmount right at the edge" reasoning
+//    `apps/desktop/src/canvas-core/viewportCulling.ts`'s
+//    `VIEWPORT_CULL_MARGIN` already uses for segments) are mounted at all
+//    — `<InkTileCanvas>` below, one per visible tile, each painting only
+//    the committed strokes `./ink.ts`'s `bucketStrokesByTile` says
+//    intersect it (NTA-73). `visibleRect: null` (viewport not measured
+//    yet) falls back to one tile grid covering every stroke's own
+//    bounds, same "null means show everything" contract
+//    `CanvasViewport.tsx`'s own doc comment documents — this is also
+//    what every existing test (no real `ResizeObserver` in jsdom) and
+//    `InkLayerHost.tsx`'s tests (which pass `visibleRect: null` via a
+//    literal context value) exercise.
+//
+//    A tile's own paint effect depends only on its bucketed stroke array
+//    and its rect — both stay reference-stable across a pen/highlighter
+//    draw (nothing about `strokes`/`workingStrokes`/`visibleRect`
+//    changes while just sampling `livePoints`), and `<InkTileCanvas>` is
+//    `memo`-wrapped with a shallow stroke-array comparison so even a
+//    freshly-bucketed-but-unchanged array (as happens to every
+//    *unaffected* tile during an eraser drag, since `bucketStrokesByTile`
+//    reallocates every tile's array on every call) doesn't trigger a
+//    repaint. That's the "committed strokes paint once" half of NTA-74.
+//
+//    The in-progress pen/highlighter stroke instead paints onto one
+//    small overlay `<canvas>` sized to just its own bounds
+//    (`./ink.ts`'s `strokeBounds`, reused as a single-item call), whose
+//    paint effect depends on `livePoints` and repaints on every
+//    `pointermove` sample — the "only the in-progress stroke repaints"
+//    half of NTA-74. It's the last child in this component's JSX so it
+//    paints on top of every tile beneath it, same effect as before this
+//    split (the live stroke was always drawn after every committed one).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import {
+  bucketStrokesByTile,
   computeStrokesBounds,
+  computeVisibleTiles,
   eraseAtPoint,
+  INK_TILE_OVERSCAN,
+  INK_TILE_SIZE,
+  inkTileKey,
   nextZIndex,
+  strokeBounds,
   strokeOutlinePath,
   type InkPoint,
+  type InkRect,
   type InkStrokeData,
   type InkTool,
 } from "./ink";
@@ -88,7 +132,7 @@ const DEFAULT_HIGHLIGHTER_SIZE = 18;
 /** Highlighter strokes paint at reduced opacity so overlapping marks (and whatever's underneath) stay visible, the same "translucent marker" look every highlighter tool has. */
 const HIGHLIGHTER_ALPHA = 0.4;
 const DEFAULT_ERASER_RADIUS = 14;
-/** Extra margin (beyond half the widest stroke's own size) around the bounding `<canvas>` — see `./ink.ts`'s `computeStrokesBounds` doc comment. */
+/** Extra margin (beyond half the widest stroke's own size) around every bounds computation below (tile-grid fallback, per-stroke tile bucketing, the live-stroke overlay) — see `./ink.ts`'s `computeStrokesBounds` doc comment. */
 const BOUNDS_PADDING = 24;
 
 export interface CanvasPoint {
@@ -111,7 +155,66 @@ export interface InkLayerProps {
   setPanSuppressed?: (suppressed: boolean) => void;
   /** Called once with a stable `togglePanel` function the host can invoke (e.g. from `TOGGLE_INK_PANEL_COMMAND`'s handler) to show/hide the tool panel — mirrors `SegmentLayerProps.onCreateVisibleSegmentReady`'s doc comment. */
   onTogglePanelReady?: (togglePanel: () => void) => void;
+  /** The currently-visible canvas-space rect (host's `useCanvasCoordinates().visibleRect`) — drives which tiles mount (NTA-73). `null`/omitted means "not measured yet, show everything" (same contract as the host's own type) — see this file's header comment, point 4. */
+  visibleRect?: InkRect | null;
 }
+
+function sameStrokes(a: InkStrokeData[], b: InkStrokeData[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * One tile's static canvas (NTA-73/74) — paints only the committed
+ * strokes bucketed to it, positioned/sized to its own fixed-grid rect.
+ * `memo`-wrapped with a shallow `strokes` comparison (not just reference
+ * equality on the array itself) since `bucketStrokesByTile` reallocates
+ * every tile's bucket array on every call, even for a tile whose actual
+ * contents didn't change — see this file's header comment, point 4, for
+ * why that matters during an eraser drag.
+ */
+const InkTileCanvas = memo(
+  function InkTileCanvas({ rect, strokes }: { rect: InkRect; strokes: InkStrokeData[] }) {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      // No real 2D context available — this workspace's jsdom test
+      // environment included (no `canvas` npm package installed; see
+      // SegmentLayer.tsx's own auto-grow-height note for the same
+      // category of "can't verify actual pixels in this test
+      // environment" limit). Everything above this guard (tiling math,
+      // bounds math, event wiring, outline math, eraser math, command
+      // commit) is what's actually tested.
+      if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const stroke of strokes) {
+        const localPoints = stroke.points.map((p) => ({ ...p, x: p.x - rect.x, y: p.y - rect.y }));
+        const path = new Path2D(strokeOutlinePath(localPoints, stroke.size));
+        ctx.globalAlpha = stroke.tool === "highlighter" ? HIGHLIGHTER_ALPHA : 1;
+        ctx.fillStyle = stroke.color;
+        ctx.fill(path);
+      }
+      ctx.globalAlpha = 1;
+    }, [strokes, rect]);
+
+    return (
+      <canvas
+        ref={canvasRef}
+        className="ink-layer__canvas"
+        style={{ left: rect.x, top: rect.y }}
+        width={Math.ceil(rect.width)}
+        height={Math.ceil(rect.height)}
+      />
+    );
+  },
+  (prev, next) => prev.rect === next.rect && sameStrokes(prev.strokes, next.strokes),
+);
 
 export function InkLayer({
   strokes,
@@ -121,6 +224,7 @@ export function InkLayer({
   screenToCanvas,
   setPanSuppressed,
   onTogglePanelReady,
+  visibleRect = null,
 }: InkLayerProps) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [activeTool, setActiveTool] = useState<InkTool | null>(null);
@@ -270,46 +374,60 @@ export function InkLayer({
   }, [activeTool]);
 
   const displayedStrokes = workingStrokes ?? strokes;
-  const bounds = useMemo(
-    () => computeStrokesBounds(displayedStrokes, livePoints, BOUNDS_PADDING),
-    [displayedStrokes, livePoints],
+
+  // NTA-73: the fixed-grid tiles currently relevant to mount, from the
+  // host's `visibleRect` (or every stroke's own bounds as a fallback —
+  // see this file's header comment, point 4). Deliberately independent
+  // of `livePoints`/`displayedStrokes` — it should only change when the
+  // viewport itself moves (or, in the fallback case, when the set of
+  // strokes on the page changes), never on every pointermove sample.
+  const fallbackBounds = useMemo(() => computeStrokesBounds(strokes, null, BOUNDS_PADDING), [strokes]);
+  const tiles = useMemo(
+    () => computeVisibleTiles(visibleRect, fallbackBounds, INK_TILE_SIZE, INK_TILE_OVERSCAN),
+    [visibleRect, fallbackBounds],
   );
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !bounds) return;
-    const ctx = canvas.getContext("2d");
-    // No real 2D context available — this workspace's jsdom test
-    // environment included (no `canvas` npm package installed; see
-    // SegmentLayer.tsx's own auto-grow-height note for the same category
-    // of "can't verify actual pixels in this test environment" limit).
-    // Everything above this guard (bounds math, event wiring, outline
-    // math, eraser math, command commit) is what's actually tested.
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (const stroke of displayedStrokes) {
-      const localPoints = stroke.points.map((p) => ({ ...p, x: p.x - bounds.x, y: p.y - bounds.y }));
-      const path = new Path2D(strokeOutlinePath(localPoints, stroke.size));
-      ctx.globalAlpha = stroke.tool === "highlighter" ? HIGHLIGHTER_ALPHA : 1;
-      ctx.fillStyle = stroke.color;
-      ctx.fill(path);
-    }
-    if (livePoints && livePoints.length > 0 && activeTool !== "eraser") {
-      const localPoints = livePoints.map((p) => ({ ...p, x: p.x - bounds.x, y: p.y - bounds.y }));
-      const size = activeTool === "highlighter" ? highlighterSizeRef.current : penSizeRef.current;
-      const color = activeTool === "highlighter" ? highlighterColorRef.current : penColorRef.current;
-      const path = new Path2D(strokeOutlinePath(localPoints, size));
-      ctx.globalAlpha = activeTool === "highlighter" ? HIGHLIGHTER_ALPHA : 1;
-      ctx.fillStyle = color;
-      ctx.fill(path);
-    }
-    ctx.globalAlpha = 1;
-  }, [displayedStrokes, livePoints, bounds, activeTool]);
+  // NTA-74 (static half): which committed/working strokes belong to each
+  // tile. Depends on `tiles` and `displayedStrokes`, not `livePoints` —
+  // stable across a pen/highlighter draw, so `<InkTileCanvas>` below
+  // doesn't repaint per pointermove; see its own doc comment for how an
+  // eraser drag (which *does* change `displayedStrokes` every sample)
+  // still avoids repainting tiles it doesn't touch.
+  const tileBuckets = useMemo(
+    () => bucketStrokesByTile(tiles, displayedStrokes, BOUNDS_PADDING),
+    [tiles, displayedStrokes],
+  );
 
-  function selectTool(tool: InkTool) {
+  // NTA-74 (active half): the in-progress pen/highlighter stroke's own
+  // small bounds, independent of every tile above — this is what the
+  // overlay canvas below is sized to, so a live stroke's repaint cost
+  // never scales with how many strokes/tiles exist elsewhere on the page.
+  const liveSize = activeTool === "highlighter" ? highlighterSize : penSize;
+  const liveBounds = useMemo(
+    () => (livePoints && livePoints.length > 0 ? strokeBounds({ points: livePoints, size: liveSize }, BOUNDS_PADDING) : null),
+    [livePoints, liveSize],
+  );
+
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = overlayCanvasRef.current;
+    if (!canvas || !liveBounds || !livePoints || activeTool === "eraser") return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return; // see InkTileCanvas's own doc comment on this guard
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const localPoints = livePoints.map((p) => ({ ...p, x: p.x - liveBounds.x, y: p.y - liveBounds.y }));
+    const size = activeTool === "highlighter" ? highlighterSizeRef.current : penSizeRef.current;
+    const color = activeTool === "highlighter" ? highlighterColorRef.current : penColorRef.current;
+    const path = new Path2D(strokeOutlinePath(localPoints, size));
+    ctx.globalAlpha = activeTool === "highlighter" ? HIGHLIGHTER_ALPHA : 1;
+    ctx.fillStyle = color;
+    ctx.fill(path);
+    ctx.globalAlpha = 1;
+  }, [livePoints, liveBounds, activeTool]);
+
+  const selectTool = useCallback((tool: InkTool) => {
     setActiveTool(tool);
-  }
+  }, []);
 
   function handleDone() {
     setActiveTool(null);
@@ -318,13 +436,17 @@ export function InkLayer({
 
   return (
     <div className="ink-layer">
-      {bounds && (
+      {tiles.map((tile) => {
+        const key = inkTileKey(tile.tx, tile.ty);
+        return <InkTileCanvas key={key} rect={tile.rect} strokes={tileBuckets.get(key) ?? []} />;
+      })}
+      {liveBounds && livePoints && activeTool !== "eraser" && (
         <canvas
-          ref={canvasRef}
+          ref={overlayCanvasRef}
           className="ink-layer__canvas"
-          style={{ left: bounds.x, top: bounds.y }}
-          width={Math.ceil(bounds.width)}
-          height={Math.ceil(bounds.height)}
+          style={{ left: liveBounds.x, top: liveBounds.y }}
+          width={Math.ceil(liveBounds.width)}
+          height={Math.ceil(liveBounds.height)}
         />
       )}
       {panelOpen &&

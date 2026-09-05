@@ -247,9 +247,8 @@ concerns with no dependency between them.
   `contrast-util`), `format-font-size`, `format-headers` (H1-H3),
   `format-bullet-list`, `format-checkbox-list`, `format-alignment`.
 - **Ink** (`plugins/element-ink`, `core.element.ink`): pointer capture →
-  `perfect-freehand` tapered outline → `Path2D` paint on one bounds-fitted
-  `<canvas>` (tiled per-viewport-region rendering is NTA-73/74's later
-  optimization, not this build's scope). Eraser is whole-stroke or
+  `perfect-freehand` tapered outline → `Path2D` paint, tiled per-
+  viewport-region (NTA-73/74, see below). Eraser is whole-stroke or
   pixel/segment, both undoable. `touch-action: none` (already set on
   `.canvas-viewport`, NTA-33) satisfies "no native scroll/zoom on
   pen/touch." Real build done, NTA-90/91/92/93 (2026-09-05) — this design
@@ -257,8 +256,23 @@ concerns with no dependency between them.
   2026-09-01; see NTA-90 for the gap this closed). Tool selection is
   sticky (stays active across strokes), a `createPortal`-rendered floating
   panel (same fix `core.element.youtube-embed`'s insert dialog needed,
-  NTA-64) for pen/highlighter/eraser + color/size. Now that Ink exists,
-  NTA-73/74 (Phase 9) are unblocked, though not yet themselves built.
+  NTA-64) for pen/highlighter/eraser + color/size. Tiled rendering +
+  static/active layer split (Phase 9) real build done, NTA-73/74
+  (2026-09-05): `./ink.ts`'s `computeVisibleTiles` divides canvas-space
+  into a fixed 1024-unit grid (`INK_TILE_SIZE`) and returns only the
+  tiles intersecting the host's `visibleRect` (expanded by a 512-unit
+  `INK_TILE_OVERSCAN`, same "don't unmount right at the edge" reasoning
+  as `viewportCulling.ts`'s segment-culling margin) — each mounts its own
+  `<canvas>` (`InkLayer.tsx`'s `InkTileCanvas`), painting only the
+  committed strokes `bucketStrokesByTile` says intersect it, `memo`-
+  wrapped so a freshly-bucketed-but-unchanged array (as happens to every
+  unaffected tile during an eraser drag) doesn't trigger a repaint. The
+  in-progress pen/highlighter stroke paints onto its own small overlay
+  canvas instead, sized to just its own bounds and repainted every
+  `pointermove` — the "static tiles paint once, only the active stroke
+  repaints" split. The eraser's live preview isn't given its own overlay
+  (neither ticket asked for that); it still only repaints the tile(s) its
+  working set actually touches, via the same memo comparison.
 - **Images** (`plugins/element-image`, `core.element.image`): inserted
   via file picker, drag-and-drop onto the canvas, or paste from
   clipboard — the source file is copied into the page's workspace assets
@@ -305,9 +319,9 @@ concerns with no dependency between them.
   `SegmentLayerHost.tsx` filters against it (`viewportCulling.ts`, 400-unit
   overscan) so a segment far outside the viewport unmounts from the DOM
   while its data stays in the model. Tiled ink rendering/static-active
-  layer split (NTA-73/74) are unblocked now that Ink exists (NTA-90/91/
-  92/93, 2026-09-05) but not yet themselves built; per-plugin
-  code-splitting (NTA-77) is deferred as its own follow-up pass.
+  layer split real build done, NTA-73/74 (2026-09-05, see §5's Ink
+  bullet for the detail); per-plugin code-splitting (NTA-77) is deferred
+  as its own follow-up pass.
 
 ## 6. Persistence
 

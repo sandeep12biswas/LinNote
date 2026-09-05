@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  bucketStrokesByTile,
   computeEraseDiff,
   computeStrokesBounds,
+  computeVisibleTiles,
   eraseAtPoint,
+  inkTileKey,
   nextZIndex,
+  rectsIntersect,
+  strokeBounds,
   strokeOutlinePath,
   strokeTouchesPoint,
   type InkPoint,
@@ -177,6 +182,94 @@ describe("eraseAtPoint", () => {
     const untouched = makeStroke({ id: "untouched", points: [{ x: 500, y: 500, pressure: 0.5, t: 0 }] });
     const result = eraseAtPoint([untouched], { x: 0, y: 0 }, 3, "segment");
     expect(result[0]).toBe(untouched);
+  });
+});
+
+describe("strokeBounds", () => {
+  it("matches computeStrokesBounds for the same single stroke (its single-item sibling)", () => {
+    const stroke = { points: [{ x: 0, y: 0, pressure: 0.5, t: 0 }, { x: 100, y: 50, pressure: 0.5, t: 1 }], size: 10 };
+    expect(strokeBounds(stroke, 20)).toEqual(computeStrokesBounds([stroke], null, 20));
+  });
+
+  it("is null for a stroke with no points", () => {
+    expect(strokeBounds({ points: [], size: 4 }, 10)).toBeNull();
+  });
+});
+
+describe("rectsIntersect", () => {
+  it("is true for overlapping rects", () => {
+    expect(rectsIntersect({ x: 0, y: 0, width: 10, height: 10 }, { x: 5, y: 5, width: 10, height: 10 })).toBe(true);
+  });
+
+  it("is false for rects that don't overlap", () => {
+    expect(rectsIntersect({ x: 0, y: 0, width: 10, height: 10 }, { x: 100, y: 100, width: 10, height: 10 })).toBe(false);
+  });
+
+  it("is false for rects that only touch at an edge (not a real overlap)", () => {
+    expect(rectsIntersect({ x: 0, y: 0, width: 10, height: 10 }, { x: 10, y: 0, width: 10, height: 10 })).toBe(false);
+  });
+});
+
+describe("computeVisibleTiles (NTA-73)", () => {
+  it("is empty when both visibleRect and fallbackBounds are null (nothing to show yet)", () => {
+    expect(computeVisibleTiles(null, null, 100, 10)).toEqual([]);
+  });
+
+  it("falls back to a grid covering fallbackBounds when visibleRect is null (viewport not measured yet)", () => {
+    const tiles = computeVisibleTiles(null, { x: 0, y: 0, width: 50, height: 50 }, 100, 10);
+    expect(tiles).toEqual([{ tx: 0, ty: 0, rect: { x: 0, y: 0, width: 100, height: 100 } }]);
+  });
+
+  it("covers visibleRect expanded by overscan, snapped to the tile grid", () => {
+    // visibleRect [0,50) expanded by 10 overscan -> [-10, 60) -> tiles -1 and 0 at tileSize 100.
+    const tiles = computeVisibleTiles({ x: 0, y: 0, width: 50, height: 50 }, null, 100, 10);
+    const keys = tiles.map((t) => inkTileKey(t.tx, t.ty)).sort();
+    expect(keys).toEqual(["-1:-1", "-1:0", "0:-1", "0:0"].sort());
+  });
+
+  it("returns one tile for a visibleRect entirely inside a single tile with no overscan", () => {
+    const tiles = computeVisibleTiles({ x: 10, y: 10, width: 5, height: 5 }, null, 100, 0);
+    expect(tiles).toEqual([{ tx: 0, ty: 0, rect: { x: 0, y: 0, width: 100, height: 100 } }]);
+  });
+});
+
+describe("bucketStrokesByTile (NTA-73/74)", () => {
+  it("buckets a stroke into only the tile(s) its bounds intersect", () => {
+    const tiles = [
+      { tx: 0, ty: 0, rect: { x: 0, y: 0, width: 100, height: 100 } },
+      { tx: 1, ty: 0, rect: { x: 100, y: 0, width: 100, height: 100 } },
+    ];
+    const stroke = makeStroke({ points: [{ x: 10, y: 10, pressure: 0.5, t: 0 }], size: 2 });
+    const buckets = bucketStrokesByTile(tiles, [stroke], 0);
+    expect(buckets.get("0:0")).toEqual([stroke]);
+    expect(buckets.get("1:0")).toEqual([]);
+  });
+
+  it("buckets a stroke spanning two tiles into both", () => {
+    const tiles = [
+      { tx: 0, ty: 0, rect: { x: 0, y: 0, width: 100, height: 100 } },
+      { tx: 1, ty: 0, rect: { x: 100, y: 0, width: 100, height: 100 } },
+    ];
+    const stroke = makeStroke({
+      points: [
+        { x: 50, y: 50, pressure: 0.5, t: 0 },
+        { x: 150, y: 50, pressure: 0.5, t: 1 },
+      ],
+    });
+    const buckets = bucketStrokesByTile(tiles, [stroke], 0);
+    expect(buckets.get("0:0")).toEqual([stroke]);
+    expect(buckets.get("1:0")).toEqual([stroke]);
+  });
+
+  it("gives every tile an empty bucket even when no strokes intersect it", () => {
+    const tiles = [{ tx: 5, ty: 5, rect: { x: 500, y: 500, width: 100, height: 100 } }];
+    expect(bucketStrokesByTile(tiles, [makeStroke()], 0).get("5:5")).toEqual([]);
+  });
+
+  it("keeps an untouched stroke's own reference in its bucket (not a copy) — lets a memoized tile skip repainting when nothing about it changed", () => {
+    const tiles = [{ tx: 0, ty: 0, rect: { x: 0, y: 0, width: 100, height: 100 } }];
+    const stroke = makeStroke();
+    expect(bucketStrokesByTile(tiles, [stroke], 0).get("0:0")![0]).toBe(stroke);
   });
 });
 

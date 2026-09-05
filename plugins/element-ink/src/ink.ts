@@ -78,6 +78,14 @@ function getSvgPathFromStroke(outline: number[][]): string {
   return d.join(" ");
 }
 
+/** Canvas-space rectangle — shared shape for stroke bounds, tile bounds, and the viewport's own `visibleRect` (mirrors `apps/desktop/src/canvas-core/CanvasViewport.tsx`'s `CanvasRect`/`apps/desktop/src/canvas-core/viewportCulling.ts`'s `Rect`, per this file's own "plugin mirrors the app's real type" convention). */
+export interface InkRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /**
  * Bounding rect (canvas-space) of every point across `strokes` and — if a
  * stroke is currently being drawn — `livePoints`, expanded by `padding`
@@ -89,7 +97,7 @@ export function computeStrokesBounds(
   strokes: ReadonlyArray<{ points: InkPoint[]; size: number }>,
   livePoints: InkPoint[] | null,
   padding: number,
-): { x: number; y: number; width: number; height: number } | null {
+): InkRect | null {
   const allPoints = strokes.flatMap((s) => s.points).concat(livePoints ?? []);
   if (allPoints.length === 0) return null;
   const maxStrokeSize = strokes.reduce((max, s) => Math.max(max, s.size), 0);
@@ -101,6 +109,142 @@ export function computeStrokesBounds(
   const maxX = Math.max(...xs) + margin;
   const maxY = Math.max(...ys) + margin;
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/**
+ * Bounding rect (canvas-space) of one stroke (or in-progress `livePoints`
+ * treated as a pseudo-stroke) on its own — the single-item sibling of
+ * `computeStrokesBounds`, used by the tiling math below to test one
+ * stroke against many tiles rather than folding every stroke into one
+ * page-wide box. Same margin formula (`padding + size / 2`); `null` for
+ * an empty `points` array (shouldn't normally happen — same defensive
+ * case `strokeOutlinePath` guards against).
+ */
+export function strokeBounds(stroke: { points: InkPoint[]; size: number }, padding: number): InkRect | null {
+  return computeStrokesBounds([stroke], null, padding);
+}
+
+/**
+ * True if two canvas-space rects overlap at all (touching edges don't
+ * count) — the standard "separated on some axis" negation, same formula
+ * `apps/desktop/src/canvas-core/viewportCulling.ts`'s `isRectVisible`
+ * uses for segment culling (NTA-76), reused here for tile/stroke and
+ * tile/viewport intersection alike (NTA-73).
+ */
+export function rectsIntersect(a: InkRect, b: InkRect): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+/** Canvas-space units per tile side (NTA-73). Large enough that a typical page's strokes span only a handful of tiles (few canvas elements, little per-tile bookkeeping overhead) while still keeping any one tile's repaint cheap when its stroke set changes. */
+export const INK_TILE_SIZE = 1024;
+
+/**
+ * Extra margin (canvas-space units) added around `visibleRect` before
+ * computing which tiles are "visible" — without it, a tile would
+ * mount/unmount every time its boundary crossed the viewport edge during
+ * a slow pan, each time re-running its paint effect. Same "overscan
+ * before unmount" reasoning as
+ * `apps/desktop/src/canvas-core/viewportCulling.ts`'s
+ * `VIEWPORT_CULL_MARGIN` (used there for segments), sized larger here
+ * since one ink tile's canvas is more expensive to repaint than one
+ * segment is to remount.
+ */
+export const INK_TILE_OVERSCAN = 512;
+
+/** One tile's identity + its canvas-space rect. */
+export interface InkTile {
+  tx: number;
+  ty: number;
+  rect: InkRect;
+}
+
+/** Stable per-tile key for React's `key` prop / `Map` lookups — two calls with the same `tx`/`ty` always produce the same string, so a tile that stays visible across renders keeps the same React element identity (no remount, no dropped canvas paint). */
+export function inkTileKey(tx: number, ty: number): string {
+  return `${tx}:${ty}`;
+}
+
+function tileRangeForRect(rect: InkRect, tileSize: number): { minTx: number; maxTx: number; minTy: number; maxTy: number } {
+  return {
+    minTx: Math.floor(rect.x / tileSize),
+    maxTx: Math.floor((rect.x + rect.width) / tileSize),
+    minTy: Math.floor(rect.y / tileSize),
+    maxTy: Math.floor((rect.y + rect.height) / tileSize),
+  };
+}
+
+function tilesCoveringRect(rect: InkRect, tileSize: number): InkTile[] {
+  const { minTx, maxTx, minTy, maxTy } = tileRangeForRect(rect, tileSize);
+  const tiles: InkTile[] = [];
+  for (let ty = minTy; ty <= maxTy; ty++) {
+    for (let tx = minTx; tx <= maxTx; tx++) {
+      tiles.push({ tx, ty, rect: { x: tx * tileSize, y: ty * tileSize, width: tileSize, height: tileSize } });
+    }
+  }
+  return tiles;
+}
+
+/**
+ * Which fixed-size tiles (NTA-73) are currently relevant to mount/paint —
+ * `visibleRect` expanded by `overscan`, snapped to the `tileSize` grid.
+ * `visibleRect: null` (the viewport hasn't been measured yet — see
+ * `CanvasViewport.tsx`'s own doc comment on why that means "show
+ * everything," not "nothing is visible") falls back to covering
+ * `fallbackBounds` instead (the old single-canvas bounding box of every
+ * stroke) so the page still renders something before the first real
+ * measurement — and so this plugin's own tests, whose jsdom
+ * `ResizeObserver` stub never fires a callback, keep exercising the real
+ * tiling grid rather than a special-cased empty state. `null` result
+ * (nothing to show) only when both `visibleRect` and `fallbackBounds`
+ * are `null`.
+ */
+export function computeVisibleTiles(
+  visibleRect: InkRect | null,
+  fallbackBounds: InkRect | null,
+  tileSize: number,
+  overscan: number,
+): InkTile[] {
+  if (!visibleRect) {
+    return fallbackBounds ? tilesCoveringRect(fallbackBounds, tileSize) : [];
+  }
+  const expanded: InkRect = {
+    x: visibleRect.x - overscan,
+    y: visibleRect.y - overscan,
+    width: visibleRect.width + overscan * 2,
+    height: visibleRect.height + overscan * 2,
+  };
+  return tilesCoveringRect(expanded, tileSize);
+}
+
+/**
+ * Buckets `strokes` by which of `tiles` they intersect (NTA-73/74) — a
+ * stroke whose bounds span more than one tile appears in each of those
+ * tiles' buckets. That's correct, not a duplicate-paint bug:
+ * `./InkLayer.tsx` shifts a stroke's points into each tile's own local
+ * (canvas-pixel) space before painting it there, and a canvas element
+ * only ever shows what falls within its own bounds — so the same stroke
+ * painted into two neighboring tiles just shows the half that actually
+ * falls in each, like one continuous line. `padding` should match
+ * whatever margin the caller paints with (`strokeBounds`'s own
+ * `padding`), so a thick stroke's outline isn't culled from a tile its
+ * edge still visibly reaches into.
+ */
+export function bucketStrokesByTile(
+  tiles: readonly InkTile[],
+  strokes: readonly InkStrokeData[],
+  padding: number,
+): Map<string, InkStrokeData[]> {
+  const buckets = new Map<string, InkStrokeData[]>();
+  for (const tile of tiles) buckets.set(inkTileKey(tile.tx, tile.ty), []);
+  for (const stroke of strokes) {
+    const bounds = strokeBounds(stroke, padding);
+    if (!bounds) continue;
+    for (const tile of tiles) {
+      if (rectsIntersect(bounds, tile.rect)) {
+        buckets.get(inkTileKey(tile.tx, tile.ty))!.push(stroke);
+      }
+    }
+  }
+  return buckets;
 }
 
 const EPS = 1e-6;

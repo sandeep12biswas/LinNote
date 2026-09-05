@@ -2,7 +2,7 @@ import { act, useCallback, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InkLayer, type CanvasPoint, type InkLayerProps } from "./InkLayer";
-import type { InkStrokeData } from "./ink";
+import type { InkRect, InkStrokeData } from "./ink";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -48,12 +48,14 @@ function dispatchPointer(type: "pointerdown" | "pointermove" | "pointerup", clie
 function Harness({
   pointerPosition = { x: 0, y: 0 },
   initialStrokes = [],
+  visibleRect,
   onCommitStroke,
   onEraseStrokes,
   onTogglePanelReady,
 }: {
   pointerPosition?: CanvasPoint | null;
   initialStrokes?: InkStrokeData[];
+  visibleRect?: InkRect | null;
   onCommitStroke?: InkLayerProps["onCommitStroke"];
   onEraseStrokes?: InkLayerProps["onEraseStrokes"];
   onTogglePanelReady?: InkLayerProps["onTogglePanelReady"];
@@ -84,8 +86,17 @@ function Harness({
       pointerPosition={pointerPosition}
       screenToCanvas={identityScreenToCanvas}
       onTogglePanelReady={onTogglePanelReady}
+      visibleRect={visibleRect}
     />
   );
+}
+
+/** Every currently-mounted tile/overlay `<canvas>`'s own `left`/`top` inline style, as numbers — enough to tell tiles apart without a real 2D context (see this file's existing "can't verify actual pixels" notes elsewhere). */
+function canvasPositions(): Array<{ left: number; top: number }> {
+  return Array.from(document.querySelectorAll<HTMLCanvasElement>(".ink-layer__canvas")).map((canvas) => ({
+    left: Number.parseFloat(canvas.style.left),
+    top: Number.parseFloat(canvas.style.top),
+  }));
 }
 
 function findButton(text: string): HTMLButtonElement {
@@ -317,5 +328,88 @@ describe("InkLayer: eraser (NTA-93)", () => {
     expect(onEraseStrokes).toHaveBeenCalledTimes(1);
     const [before, after] = onEraseStrokes.mock.calls[0] as [InkStrokeData[], InkStrokeData[]];
     expect(after).toEqual(before);
+  });
+});
+
+describe("InkLayer: tiling & static/active layer split (NTA-73/74)", () => {
+  it("with no visibleRect (viewport not measured yet), falls back to one tile covering every stroke's own bounds", () => {
+    // Placed well clear of x=0/y=0 (unlike makeStroke's default 0..30) so
+    // the stroke's own padded bounds don't straddle the tile grid's
+    // origin — keeps this a clean single-tile case; the multi-tile
+    // straddle case is exactly what the next test exercises instead.
+    const stroke = makeStroke({ points: [{ x: 200, y: 200, pressure: 0.5, t: 0 }, { x: 230, y: 200, pressure: 0.5, t: 1 }] });
+    mount(<Harness initialStrokes={[stroke]} />);
+    expect(canvasPositions()).toEqual([{ left: 0, top: 0 }]); // fallback bounds fit inside tile (0,0)
+  });
+
+  it("with no visibleRect, a stroke whose padded bounds straddle the grid origin gets a tile on every side it touches", () => {
+    // makeStroke's default points (x = 0..30, size 4) pad out to x ∈
+    // [-26, 56] — negative on one side, so the fixed 1024-unit grid
+    // (anchored at multiples of 1024, not at the stroke's own bounds)
+    // gives it a tile on both sides of x=0 (and, since y is 0 too, both
+    // sides of y=0): four tiles, not one — this is the grid being fixed
+    // rather than content-fitted, working as designed.
+    mount(<Harness initialStrokes={[makeStroke()]} />);
+    const positions = canvasPositions().sort((a, b) => a.left - b.left || a.top - b.top);
+    expect(positions).toEqual(
+      [
+        { left: -1024, top: -1024 },
+        { left: -1024, top: 0 },
+        { left: 0, top: -1024 },
+        { left: 0, top: 0 },
+      ].sort((a, b) => a.left - b.left || a.top - b.top),
+    );
+  });
+
+  it("only mounts tiles intersecting visibleRect (a stroke far outside it isn't painted at all)", () => {
+    const near = makeStroke({ id: "near" }); // x = 0..30, inside tile (0,0)
+    const far = makeStroke({ id: "far", points: [{ x: 5000, y: 5000, pressure: 0.5, t: 0 }] }); // several tiles away
+    mount(
+      <Harness
+        initialStrokes={[near, far]}
+        visibleRect={{ x: 0, y: 0, width: 100, height: 100 }} // near the origin only
+      />,
+    );
+    // Only tile (0,0) (and whatever neighbors the overscan margin pulls in
+    // around the origin) mount — none of them at the far stroke's tile.
+    const positions = canvasPositions();
+    expect(positions.length).toBeGreaterThan(0);
+    expect(positions).not.toContainEqual({ left: 4096, top: 4096 }); // far's tile (tx=4, ty=4 at INK_TILE_SIZE=1024)
+  });
+
+  it("renders an overlay canvas for the in-progress stroke, in addition to any tile canvases, while drawing", () => {
+    let togglePanel: (() => void) | null = null;
+    // Drawn well clear of x=0/y=0 (see the previous test's own note on
+    // why) so the committed stroke ends up in exactly one tile, keeping
+    // this test's before/after counts simple.
+    mount(<Harness pointerPosition={{ x: 200, y: 200 }} onTogglePanelReady={(fn) => (togglePanel = fn)} />);
+    act(() => togglePanel!());
+    act(() => findButton("Pen").click());
+
+    expect(document.querySelectorAll(".ink-layer__canvas")).toHaveLength(0); // nothing committed, nothing being drawn yet
+
+    dispatchPointer("pointerdown", 200, 200);
+    dispatchPointer("pointermove", 210, 200);
+    expect(document.querySelectorAll(".ink-layer__canvas")).toHaveLength(1); // the live overlay only — still nothing committed
+
+    dispatchPointer("pointerup", 210, 200);
+    expect(document.querySelectorAll(".ink-layer__canvas")).toHaveLength(1); // the overlay is gone; the newly-committed stroke's tile takes its place
+  });
+
+  it("does not remount a tile's canvas element while drawing an unrelated in-progress stroke (the static layer stays untouched)", () => {
+    let togglePanel: (() => void) | null = null;
+    mount(<Harness initialStrokes={[makeStroke()]} onTogglePanelReady={(fn) => (togglePanel = fn)} />);
+    const tileCanvasBefore = document.querySelector(".ink-layer__canvas");
+    expect(tileCanvasBefore).not.toBeNull();
+
+    act(() => togglePanel!());
+    act(() => findButton("Pen").click());
+    dispatchPointer("pointerdown", 500, 500);
+    dispatchPointer("pointermove", 510, 500);
+
+    // Same tile <canvas> DOM node — React never remounted it, so its
+    // committed-stroke paint effect never re-ran either (NTA-74).
+    const tileCanvasAfter = document.querySelector(".ink-layer__canvas");
+    expect(tileCanvasAfter).toBe(tileCanvasBefore);
   });
 });
