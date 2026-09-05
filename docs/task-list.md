@@ -7,9 +7,10 @@ never drift for long; if they do, Jira is the source of truth and this file
 gets corrected.
 
 Built by cross-referencing three things as of **2026-08-30**, last updated
-**2026-09-05** (Phase 8 completion): the Notion "Desing architecture" (v2.2)
+**2026-09-05** (NTA-100/101 gap tickets added — see the two new
+cross-cutting sections below): the Notion "Desing architecture" (v2.2)
 and "Plugins" (v1.1) pages, the actual code in this repo (`plugins/*`,
-`apps/desktop/src/*`), and every issue in Jira project NTA (NTA-1…NTA-99).
+`apps/desktop/src/*`), and every issue in Jira project NTA (NTA-1…NTA-101).
 See `docs/plan.md` for the narrative gap-analysis this list was generated
 from.
 
@@ -117,6 +118,21 @@ later phase from testing against a real notebook instead of a hardcoded page.
   - [x] [NTA-54](https://sandeep12biswas.atlassian.net/browse/NTA-54) Soft-delete trash + cascade delete for folders/notebooks
   - [x] [NTA-55](https://sandeep12biswas.atlassian.net/browse/NTA-55) Breadcrumb trail above the editor canvas
   - [x] [NTA-56](https://sandeep12biswas.atlassian.net/browse/NTA-56) Lazy loading + virtualized panes + incremental title/text search index
+
+## Cross-cutting — "New Page" creation UI ⚪ NOT STARTED
+
+No menu bar, toolbar, or context-menu action anywhere calls
+`createCreateNodeCommand` with `type: "page"` — `FolderTreePane.tsx`'s
+context menu only wires up "New Folder"; `PageListPane.tsx` is read-only
+navigation. The underlying plumbing (`NodeType` already includes
+`"page"`, `createNode`/`CreateNodeCommand` are type-agnostic, undo/redo +
+autosave + persistence all handle page nodes) was fully built by Phase 2
+(NTA-43) — just never wired to a user-facing action, so there is
+currently no way to create a page in the running app. Found 2026-09-05
+auditing Phase 2 for gaps at the user's request; NTA-43 itself stays
+Done, this is tracked separately since that story is already closed.
+
+- [ ] [NTA-100](https://sandeep12biswas.atlassian.net/browse/NTA-100) — "New Page" creation is missing from the UI
 
 ## Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text ✅ DONE
 
@@ -254,6 +270,23 @@ phases above; pick up whenever, independent of Phase 3-11 progress.
   - [ ] [NTA-87](https://sandeep12biswas.atlassian.net/browse/NTA-87) Modern visual refresh: elevation, spacing rhythm, typography, transitions
   - [ ] [NTA-88](https://sandeep12biswas.atlassian.net/browse/NTA-88) Light/Dark mode toggle, user-selectable and persisted
   - [ ] [NTA-89](https://sandeep12biswas.atlassian.net/browse/NTA-89) Selectable color themes (accent palette presets)
+
+---
+
+## Cross-cutting — Error logging ⚪ NOT STARTED
+
+No centralized logging subsystem exists — just 9 scattered
+`console.error`/`console.warn` call sites (`canvas-core/`, `App.tsx`,
+`persistence/autosave.ts`, `workspace/index.ts`,
+`registry/createContext.ts`), each inventing its own bracketed tag
+(`[autosave]`, `[canvas-core]`, ...) by convention only, with no shared
+level, structured context, persistence, or user-facing surface. Never
+named as a phase or plugin in `docs/architecture.md`. Found 2026-09-05
+auditing the codebase for build gaps at the user's request. Purely
+infrastructure — doesn't block any numbered phase — so not sequenced
+relative to them; pick up whenever.
+
+- [ ] [NTA-101](https://sandeep12biswas.atlassian.net/browse/NTA-101) — Formal error logging — no centralized logging subsystem exists
 
 ---
 

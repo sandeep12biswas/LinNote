@@ -2,7 +2,8 @@
 
 This mirrors the phase breakdown in `docs/architecture.md` §9, cross-referenced
 against the actual state of Jira project **NTA** as of 2026-08-30, last
-updated 2026-09-05 (Phase 8 completion). Update this file whenever a phase's
+updated 2026-09-05 (NTA-100/101 gap tickets filed — see the two new
+cross-cutting sections below). Update this file whenever a phase's
 Jira mapping changes (a new Story is broken out, a phase's scope shifts) —
 it's the one place to see "what phase are we on and what's actually tracked
 for it," rather than re-deriving it from the Jira backlog each time.
@@ -83,6 +84,21 @@ wires the tree data and real pane behavior.
   - NTA-54 ✅ Soft-delete trash + cascade delete for folders/notebooks — `apps/desktop/src/shell/TrashPane.tsx`, `apps/desktop/src/workspace/index.ts`'s trash lifecycle functions
   - NTA-55 ✅ Breadcrumb trail above the editor canvas — `apps/desktop/src/shell/BreadcrumbTrail.tsx`, `breadcrumb.ts`
   - NTA-56 ✅ Lazy loading + virtualized panes + incremental title/text search index — `apps/desktop/src/search/`, `apps/desktop/src/shell/useElementSize.ts`/`virtualization.ts`; only `WorkspaceNode.title` is indexed today, page content indexing is stubbed pending Phase 3/8
+
+### Cross-cutting — "New Page" creation UI ⚪
+
+Gap found 2026-09-05 auditing Phase 2 at the user's request, after NTA-43
+was already Done. `createNode`/`CreateNodeCommand` are type-agnostic and
+`NodeType` already includes `"page"` — undo/redo, autosave, and
+`tree.json`/`pages/<id>.json` persistence all handle page nodes correctly.
+But no menu bar, toolbar, or context-menu action anywhere actually calls it
+with `type: "page"`: `FolderTreePane.tsx`'s right-click menu only wires up
+"New Folder", and `PageListPane.tsx` is read-only navigation (its own doc
+comment: "selecting a page is navigation state, not a plugin command").
+There is currently no way to create a page in the running app. Tracked as
+its own story rather than reopening NTA-43.
+
+- **NTA-100** (Story) ⚪ — "New Page" creation is missing from the UI
 
 ## Phase 3 — Core canvas 🟡
 
@@ -215,6 +231,22 @@ conflict-copy handling — beyond the stub activation in NTA-30/31.
   - NTA-82 ⚪ Conflict handling: last-write-wins + retained conflict copy
   - NTA-83 ⚪ "Edited elsewhere" warning banner on page open
   - NTA-84 ⚪ Settings panel: enable OneDrive / Google Drive independently
+
+## Cross-cutting — Error logging ⚪
+
+Gap found 2026-09-05 auditing the codebase for build gaps at the user's
+request. There is no centralized/formal logging subsystem — only 9
+scattered `console.error`/`console.warn` call sites (`canvas-core/`,
+`App.tsx`, `persistence/autosave.ts`, `workspace/index.ts`,
+`registry/createContext.ts`), each inventing its own bracketed tag
+(`[autosave]`, `[canvas-core]`, ...) by convention only, with no shared
+level, structured context, persistence, or user-facing surface — an error
+is visible today only if a user happens to have devtools open.
+`docs/architecture.md` never named a logging phase or plugin, so this
+isn't a documented gap in an existing story — it had never been tracked
+before now.
+
+- **NTA-101** (Story) ⚪ — Formal error logging — no centralized logging subsystem exists
 
 ## Phase 11 — Stretch ⚪
 
