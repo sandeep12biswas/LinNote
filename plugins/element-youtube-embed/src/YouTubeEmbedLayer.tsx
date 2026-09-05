@@ -27,7 +27,18 @@
 //    host installs it as `INSERT_YOUTUBE_EMBED_COMMAND`'s real,
 //    page-aware handler (overwriting the console.log fallback this
 //    plugin's own activate() registers, per ./index.ts's header
-//    comment). Opens a small modal: a URL field plus "Play here" /
+//    comment). Opens a small modal, rendered via `createPortal` to
+//    `document.body` — this component itself mounts inside
+//    `CanvasViewport`'s pan/zoom-transformed layer
+//    (`.canvas-viewport__transform`), and a `transform` on an ancestor
+//    makes that ancestor the containing block for a `position: fixed`
+//    descendant (CSS spec, not a bug in the browser): without the
+//    portal, the modal's `inset: 0` backdrop resolves against that
+//    content-sized transformed div instead of the viewport, collapsing
+//    to a 0×0 box at the canvas's pan origin — invisible and unclickable
+//    (caught via Playwright driving the real app: the "Play here" click
+//    was being intercepted by the page header sitting on top of it).
+//    A modal, a URL field plus "Play here" /
 //    "Open in browser" / Cancel.
 // 3. "Open in browser" (both the external-mode button on an existing
 //    embed and the dialog's own external choice go through the same
@@ -37,6 +48,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { open } from "@tauri-apps/plugin-shell";
 
 export const INSERT_YOUTUBE_EMBED_COMMAND = "core.element.youtube-embed.insert";
@@ -214,7 +226,11 @@ export function YouTubeEmbedLayer({
           </div>
         );
       })}
-      {dialogOpen && <InsertYouTubeDialog onSubmit={handleSubmit} onCancel={() => setDialogOpen(false)} />}
+      {dialogOpen &&
+        createPortal(
+          <InsertYouTubeDialog onSubmit={handleSubmit} onCancel={() => setDialogOpen(false)} />,
+          document.body,
+        )}
     </div>
   );
 }
