@@ -697,6 +697,27 @@ button {
   min-height: 0;
 }
 
+/* NTA-100: PageListPane.tsx's own root, mirroring .folder-tree's role —
+   a flex column filling the pane, with a fixed-height toolbar row above
+   the (flex-grow) list/empty-state, same shape as
+   .folder-tree__undo-bar's own header row above .folder-tree__viewport. */
+.page-list-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.page-list-pane__toolbar {
+  margin-bottom: 0.4em;
+}
+
+.page-list-pane__new-page {
+  width: 100%;
+  font-size: 0.8em;
+  padding: 0.2em 0.4em;
+}
+
 .folder-tree__row {
   display: flex;
   align-items: center;

@@ -3,8 +3,8 @@
 // disclosure triangles, click-to-select (writes `selectedFolderId` in
 // ../store), native HTML5 drag-and-drop (reparent, or same-parent
 // reorder — NTA-53) with a highlighted insertion indicator, and a
-// right-click context menu (rename, move, delete, new folder) driven by
-// ../workspace's `useWorkspaceTreeStore`.
+// right-click context menu (rename, move, delete, new folder, new page)
+// driven by ../workspace's `useWorkspaceTreeStore`.
 //
 // Mirrors MenuBar.tsx/Toolbar.tsx's decoupling: this component reads and
 // writes the workspace tree store directly (there's no command-bus
@@ -36,6 +36,22 @@
 // `useElementSize` (./useElementSize.ts) measures the pane's actual
 // available height (no `AutoSizer` package is a dependency here, see that
 // file's doc comment) since `FixedSizeList` needs an explicit `height`.
+//
+// NTA-100: "New Page" was missing from the UI entirely — `handleNewPage`
+// below is the same `createCreateNodeCommand` call `handleNewFolder`
+// already makes, just `type: "page"`, targeting whichever row (always a
+// notebook/folder — pages are filtered out of this tree by
+// `buildFolderTree`, see ./folderTree.ts) was right-clicked. Unlike
+// `handleNewFolder`, this doesn't `startRename` the result — a page isn't
+// rendered in *this* tree, so there's no row to attach an inline-rename
+// `<input>` to. It selects the folder and opens the new page instead
+// (`setSelectedFolder`/`setActivePage`, both already used elsewhere in
+// this file), landing the user on it so they can rename/start typing via
+// the page's own header (NTA-34) — visible feedback that something
+// actually happened, since silently creating a node the user can't see
+// wouldn't read as "it worked." PageListPane.tsx has its own "New Page"
+// toolbar button for the same command, targeting the folder it's already
+// showing rather than whatever's right-clicked here.
 
 import { useEffect, useState } from "react";
 import { FixedSizeList, type ListChildComponentProps } from "react-window";
@@ -129,6 +145,14 @@ export function FolderTreePane() {
     executeCommand(command);
     setExpandedIds((current) => new Set(current).add(parentId));
     startRename(created);
+  }
+
+  function handleNewPage(parentId: string) {
+    const { command, node: created } = createCreateNodeCommand({ parentId, type: "page", title: "New Page" });
+    executeCommand(command);
+    setSelectedFolder(parentId);
+    setActivePage(created.id);
+    setContextMenu(null);
   }
 
   function handleDelete(nodeId: string) {
@@ -354,6 +378,11 @@ export function FolderTreePane() {
           <li role="none">
             <button type="button" role="menuitem" onClick={() => handleNewFolder(contextMenu.nodeId)}>
               New Folder
+            </button>
+          </li>
+          <li role="none">
+            <button type="button" role="menuitem" onClick={() => handleNewPage(contextMenu.nodeId)}>
+              New Page
             </button>
           </li>
         </ul>
