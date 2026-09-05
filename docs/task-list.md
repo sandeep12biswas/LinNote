@@ -7,7 +7,7 @@ never drift for long; if they do, Jira is the source of truth and this file
 gets corrected.
 
 Built by cross-referencing three things as of **2026-08-30**, last updated
-**2026-09-05** (Phase 7 completion): the Notion "Desing architecture" (v2.2)
+**2026-09-05** (Phase 8 completion): the Notion "Desing architecture" (v2.2)
 and "Plugins" (v1.1) pages, the actual code in this repo (`plugins/*`,
 `apps/desktop/src/*`), and every issue in Jira project NTA (NTA-1…NTA-99).
 See `docs/plan.md` for the narrative gap-analysis this list was generated
@@ -195,21 +195,21 @@ so a reasonable place to pick it up alongside or after that phase.
   - [ ] [NTA-98](https://sandeep12biswas.atlassian.net/browse/NTA-98) Insert via paste from clipboard
   - [ ] [NTA-99](https://sandeep12biswas.atlassian.net/browse/NTA-99) Resize via drag handles (segment-style)
 
-## Phase 8 — Undo/redo, model & persistence ⚪ NOT STARTED
+## Phase 8 — Undo/redo, model & persistence ✅ DONE
 
 Unified canvas command stack shared by every plugin's mutating action, plus
 the rest of `FileSystemPersistenceProvider` (only the plugin-settings slice,
-NTA-14, exists today — `readTree`/`writePage`/etc. all throw
+NTA-14, existed before this phase — `readTree`/`writePage`/etc. all threw
 "not implemented" per `apps/desktop/src/persistence/index.ts`).
 
-- [ ] [NTA-46](https://sandeep12biswas.atlassian.net/browse/NTA-46) — Phase 8: Undo/redo, model & persistence
-  - [ ] [NTA-66](https://sandeep12biswas.atlassian.net/browse/NTA-66) Command interface + one undo/redo stack per open page across all plugins
-  - [ ] [NTA-67](https://sandeep12biswas.atlassian.net/browse/NTA-67) Gesture coalescing for fast-repeating actions
-  - [ ] [NTA-68](https://sandeep12biswas.atlassian.net/browse/NTA-68) Stack cap + diff-based commands
-  - [ ] [NTA-69](https://sandeep12biswas.atlassian.net/browse/NTA-69) FileSystemPersistenceProvider: tree/page/asset read-write
-  - [ ] [NTA-70](https://sandeep12biswas.atlassian.net/browse/NTA-70) Autosave: debounced canvas edits + hard flush on close
-  - [ ] [NTA-71](https://sandeep12biswas.atlassian.net/browse/NTA-71) Crash safety: write-to-temp-then-atomic-rename
-  - [ ] [NTA-72](https://sandeep12biswas.atlassian.net/browse/NTA-72) schemaVersion + migration path for page/tree/plugin-settings
+- [x] [NTA-46](https://sandeep12biswas.atlassian.net/browse/NTA-46) — Phase 8: Undo/redo, model & persistence — done as two commits on `feature/module-build` (2026-09-05): Pass 1 (NTA-66/67/68, commit `4c3b713`) the canvas command stack + gesture coalescing; Pass 2 (NTA-69/70/71/72, commit `b38c744`) real `FileSystemPersistenceProvider`, autosave, crash safety, schemaVersion/migration. Workspace root decided with the user: `Documents/LinNote/` (never specified in this doc before — a real gap this phase closed). Found and fixed 5 real bugs by actually driving the app end-to-end via the `run-desktop` skill (flush-before-undo timing, cross-coalescer chronological ordering, TipTap content not syncing back from an undo, a button-label collision between the two undo systems, an unhandled promise rejection in the close-flush wiring) — see the Jira comments on NTA-46 for the full list.
+  - [x] [NTA-66](https://sandeep12biswas.atlassian.net/browse/NTA-66) Command interface + one undo/redo stack per open page across all plugins
+  - [x] [NTA-67](https://sandeep12biswas.atlassian.net/browse/NTA-67) Gesture coalescing for fast-repeating actions
+  - [x] [NTA-68](https://sandeep12biswas.atlassian.net/browse/NTA-68) Stack cap + diff-based commands
+  - [x] [NTA-69](https://sandeep12biswas.atlassian.net/browse/NTA-69) FileSystemPersistenceProvider: tree/page/asset read-write
+  - [x] [NTA-70](https://sandeep12biswas.atlassian.net/browse/NTA-70) Autosave: debounced canvas edits + hard flush on close
+  - [x] [NTA-71](https://sandeep12biswas.atlassian.net/browse/NTA-71) Crash safety: write-to-temp-then-atomic-rename
+  - [x] [NTA-72](https://sandeep12biswas.atlassian.net/browse/NTA-72) schemaVersion + migration path for page/tree/plugin-settings
 
 ## Phase 9 — Performance pass ⚪ NOT STARTED
 

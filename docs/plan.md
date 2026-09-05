@@ -2,7 +2,7 @@
 
 This mirrors the phase breakdown in `docs/architecture.md` §9, cross-referenced
 against the actual state of Jira project **NTA** as of 2026-08-30, last
-updated 2026-09-05 (Phase 7 completion). Update this file whenever a phase's
+updated 2026-09-05 (Phase 8 completion). Update this file whenever a phase's
 Jira mapping changes (a new Story is broken out, a phase's scope shifts) —
 it's the one place to see "what phase are we on and what's actually tracked
 for it," rather than re-deriving it from the Jira backlog each time.
@@ -151,20 +151,27 @@ NTA-21/26 already established for headers/text-segment).
   - NTA-64 ✅ YouTube insert-time prompt: "Play here" vs "Open in browser"
   - NTA-65 ✅ fileHandlers extension point plumbing
 
-## Phase 8 — Undo/redo, model & persistence ⚪
+## Phase 8 — Undo/redo, model & persistence ✅
 
 Unified canvas command stack, structural (workspace tree) command stack,
 full `FileSystemPersistenceProvider` (tree/page/asset read-write, autosave).
-Only the plugin-settings slice (NTA-14) exists so far.
 
-- **NTA-46** (Story) ⚪ — Phase 8: Undo/redo, model & persistence
-  - NTA-66 ⚪ Command interface + one undo/redo stack per open page across all plugins
-  - NTA-67 ⚪ Gesture coalescing for fast-repeating actions
-  - NTA-68 ⚪ Stack cap + diff-based commands
-  - NTA-69 ⚪ FileSystemPersistenceProvider: tree/page/asset read-write
-  - NTA-70 ⚪ Autosave: debounced canvas edits + hard flush on close
-  - NTA-71 ⚪ Crash safety: write-to-temp-then-atomic-rename
-  - NTA-72 ⚪ schemaVersion + migration path for page/tree/plugin-settings
+- **NTA-46** (Story) ✅ — Phase 8: Undo/redo, model & persistence — two
+  commits on `feature/module-build` (2026-09-05): Pass 1 (NTA-66/67/68,
+  `4c3b713`) the canvas command stack + gesture coalescing; Pass 2
+  (NTA-69/70/71/72, `b38c744`) real persistence. Workspace root decided
+  with the user: `Documents/LinNote/` (never specified in this doc
+  before — a real gap, not an oversight, this phase closed). 5 real bugs
+  found and fixed by actually driving the app end-to-end via the
+  `run-desktop` skill rather than stopping at unit tests — see NTA-46's
+  Jira comments for the full list.
+  - NTA-66 ✅ Command interface + one undo/redo stack per open page across all plugins
+  - NTA-67 ✅ Gesture coalescing for fast-repeating actions
+  - NTA-68 ✅ Stack cap + diff-based commands
+  - NTA-69 ✅ FileSystemPersistenceProvider: tree/page/asset read-write
+  - NTA-70 ✅ Autosave: debounced canvas edits + hard flush on close
+  - NTA-71 ✅ Crash safety: write-to-temp-then-atomic-rename
+  - NTA-72 ✅ schemaVersion + migration path for page/tree/plugin-settings
 
 ## Phase 9 — Performance pass ⚪
 
@@ -239,9 +246,9 @@ what used to be gaps. Rough build order, with reasoning:
 3. ✅ Phase 3 + 4 + 6 — Core note editor: canvas, segment blocks & rich text
    (NTA-32) — done; each sub-piece built directly on the last.
 4. ✅ Phase 5 — Remaining formatting plugins, build (NTA-44) — done.
-5. ✅ Phase 7 — Attachments & embeds, build (NTA-45) — done as of
-   2026-09-05. **Next up: Phase 8.**
-6. Phase 8 — Undo/redo & full persistence (NTA-46).
+5. ✅ Phase 7 — Attachments & embeds, build (NTA-45) — done.
+6. ✅ Phase 8 — Undo/redo & full persistence (NTA-46) — done as of
+   2026-09-05. **Next up: Phase 9.**
 7. Phase 9 — Performance pass (NTA-47).
 8. Phase 10 — Cloud sync, build (NTA-48).
 9. Phase 11 — Stretch (not scheduled, no Jira story — intentionally last).

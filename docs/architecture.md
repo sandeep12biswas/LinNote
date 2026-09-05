@@ -286,6 +286,13 @@ concerns with no dependency between them.
   across every plugin's mutating action, distinct from the workspace
   structural stack (§3); tiled rendering, static/active layer split, RAF
   batching, virtualized off-screen segments, per-plugin code-splitting.
+  Command stack + gesture coalescing real build done, NTA-66/67/68
+  (Phase 8) — `commandStack.ts`/`coalescer.ts`; formatting needed zero
+  `plugins/format-*` changes (every format command already flows through
+  the same segment-content-change path typing does), just disabling
+  TipTap's own competing `History` extension
+  (`packages/rich-text-engine`). Tiled rendering/RAF batching/
+  virtualization/code-splitting are still Phase 9 (NTA-47), not built.
 
 ## 6. Persistence
 
@@ -317,6 +324,17 @@ transactional-delete correctness justify it (Phase 11 stretch, not
 built now). Autosave is debounced (~800ms) with a hard flush on window
 blur/close; writes are write-to-temp-then-atomic-rename; a
 `schemaVersion` field enables independent migration paths per store.
+**Workspace root, decided with the user (2026-09-05, NTA-69) — not
+specified anywhere in this doc before, a real gap rather than an
+oversight**: `Documents/LinNote/` — visible and discoverable, the way
+OneNote's own notebook folder is, rather than a hidden app-managed
+directory; no folder-picker UI exists yet, so v1 has exactly one, fixed
+location. Real build done — see `apps/desktop/src/persistence/index.ts`
+(CRUD + crash safety + schemaVersion), `workspace/index.ts` and
+`canvas-core/index.ts` (load-at-startup + autosave wiring, kept out of
+`persistence/` itself so the dependency arrow keeps pointing the way
+this section's own opening sentence describes), and
+`persistence/autosave.ts` (the window-close hard flush).
 
 ## 7. Cloud sync (OneDrive & Google Drive)
 
