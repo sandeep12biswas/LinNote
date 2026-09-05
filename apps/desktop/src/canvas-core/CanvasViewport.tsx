@@ -36,9 +36,10 @@ import {
   type ReactNode,
   type WheelEvent as ReactWheelEvent,
 } from "react";
+import { defaultPersistenceProvider } from "../persistence";
 import type { NotePage } from "../types";
 import { useCanvasCommandStore } from "./commandStack";
-import { DEFAULT_VIEWPORT, panViewport, useNotePageStore, zoomViewport, type Viewport } from "./index";
+import { DEFAULT_VIEWPORT, loadNotePage, panViewport, useNotePageStore, zoomViewport, type Viewport } from "./index";
 
 export interface CanvasViewportProps {
   /** id of the currently open page (a `page`-type `WorkspaceNode.id`). Drives which `NotePage` is loaded/synthesized and resets the viewport on change. */
@@ -97,16 +98,24 @@ const ZOOM_SENSITIVITY = 0.0015;
 
 export function CanvasViewport({ pageId, header, children }: CanvasViewportProps) {
   const notePage = useNotePageStore((state) => state.pages[pageId]);
-  const ensurePage = useNotePageStore((state) => state.ensurePage);
 
-  // Get-or-create is a store *action* (it may call `set`), so it runs as
-  // an effect rather than during render — see ./index.ts's `ensurePage`
-  // doc comment. `notePage` above re-selects once this has run, so a
-  // never-before-opened page id renders its blank/synthesized page one
-  // tick after mount rather than on the first render.
+  // Get-or-*load* is async now (NTA-69) — `loadNotePage` tries
+  // `persistence.readPage` first, falling back to the store's own
+  // `ensurePage` synthesis (unchanged) only when no persisted file
+  // exists. Runs as an effect, same reasoning as before this ticket:
+  // `notePage` above re-selects once this resolves, so a
+  // never-before-opened/never-persisted page id renders its
+  // blank/synthesized page one tick after mount rather than on the
+  // first render. A component-test environment with no real Tauri
+  // context and no `@tauri-apps/plugin-fs` mock degrades to exactly the
+  // same synthesis this effect always did — `loadNotePage`'s own
+  // `persistence.readPage` call rejects, caught, falling through to
+  // `ensurePage` — so no existing test needed to change for this.
   useEffect(() => {
-    ensurePage(pageId);
-  }, [ensurePage, pageId]);
+    loadNotePage(defaultPersistenceProvider, pageId).catch((error) => {
+      console.error(`[canvas-core] failed to load page ${pageId}`, error);
+    });
+  }, [pageId]);
 
   const [viewport, setViewport] = useState<Viewport>(DEFAULT_VIEWPORT);
 

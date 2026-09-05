@@ -15,9 +15,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "./shell";
+import { createNotePageAutosave } from "./canvas-core";
 import { PluginRegistry, createCommandBus, createPluginContextFactory } from "./registry";
 import type { RegisteredPlugin } from "./registry";
-import { FileSystemPersistenceProvider } from "./persistence";
+import { defaultPersistenceProvider } from "./persistence";
+import { wireHardFlushOnClose } from "./persistence/autosave";
+import { loadWorkspaceTree, wireWorkspaceTreeAutosave } from "./workspace";
 import "./App.css";
 
 import boldPlugin from "@linnote/plugin-format-bold";
@@ -58,17 +61,19 @@ const CORE_PLUGINS = [
 ];
 
 function App() {
-  // One PluginRegistry + one CommandBus per app session (docs/architecture.md
-  // §1.2) — useMemo with an empty dep array, not useState, since neither is
+  // One PluginRegistry + one CommandBus + one NotePage autosave
+  // controller per app session (docs/architecture.md §1.2/§6) — useMemo
+  // with an empty dep array, not useState, since none of the three is
   // ever replaced, only acted on.
-  const { registry, commandBus } = useMemo(() => {
+  const { registry, commandBus, notePageAutosave } = useMemo(() => {
     const bus = createCommandBus();
     return {
       commandBus: bus,
       registry: new PluginRegistry(CORE_PLUGINS, {
-        settingsPersistence: new FileSystemPersistenceProvider(),
+        settingsPersistence: defaultPersistenceProvider,
         createContext: createPluginContextFactory({ commandBus: bus }),
       }),
+      notePageAutosave: createNotePageAutosave(defaultPersistenceProvider),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -76,9 +81,13 @@ function App() {
   const [registeredPlugins, setRegisteredPlugins] = useState<RegisteredPlugin[]>([]);
   const [activated, setActivated] = useState(false);
 
+  // NTA-15's plugin activation and NTA-69's workspace-tree load both
+  // gate the same "Loading plugins…" screen — loading the tree
+  // *after* first render would show the in-memory seed default, then
+  // flash to whatever's actually persisted a moment later.
   useEffect(() => {
     let cancelled = false;
-    registry.activateAll().then(() => {
+    Promise.all([registry.activateAll(), loadWorkspaceTree(defaultPersistenceProvider)]).then(() => {
       if (cancelled) return;
       setRegisteredPlugins(registry.list());
       setActivated(true);
@@ -87,6 +96,32 @@ function App() {
       cancelled = true;
     };
   }, [registry]);
+
+  // NTA-70: tree mutations flush immediately; page edits debounce
+  // (~800ms) via `notePageAutosave`, with a hard flush on window
+  // close/blur so nothing is lost to an in-flight debounce timer.
+  useEffect(() => {
+    const unsubscribeTree = wireWorkspaceTreeAutosave(defaultPersistenceProvider);
+    const unsubscribePages = notePageAutosave.wire();
+    let unlistenClose: (() => void) | undefined;
+    wireHardFlushOnClose(notePageAutosave)
+      .then((unlisten) => {
+        unlistenClose = unlisten;
+      })
+      .catch((error) => {
+        // `getCurrentWindow()` needs a real Tauri window context — found
+        // missing this catch by actually driving the app in a plain
+        // browser (this session's own headless-Chromium + mocked-IPC
+        // setup, not a real Tauri window), where it rejects and would
+        // otherwise surface as an unhandled promise rejection.
+        console.error("[autosave] failed to wire hard-flush-on-close", error);
+      });
+    return () => {
+      unsubscribeTree();
+      unsubscribePages();
+      unlistenClose?.();
+    };
+  }, [notePageAutosave]);
 
   function runCommand(commandId: string) {
     commandBus.run(commandId);

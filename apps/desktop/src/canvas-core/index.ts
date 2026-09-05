@@ -47,6 +47,11 @@
 
 import { create } from "zustand";
 import { suggestTextColor } from "@linnote/contrast-util";
+// Type-only — see this file's own persistence-wiring functions at the
+// bottom for why this file never imports a *value* from ../persistence
+// (../persistence's own header comment: everything else depends on it,
+// never the reverse).
+import type { PersistenceProvider } from "../persistence";
 import type { CanvasElement, NotePage } from "../types";
 import { createSeedNotePages, DEFAULT_BACKGROUND_COLOR } from "./mockData";
 
@@ -293,6 +298,93 @@ export const useNotePageStore = create<NotePageState>((set, get) => ({
     set({ pages: { ...withPage, [id]: setBackgroundColorInPage(page, color) } });
   },
 }));
+
+// ---- Persistence wiring (NTA-69/70, Phase 8) ----------------------------
+// Lives here, not in ../persistence/, so ../persistence/ never has to
+// import a *value* from this file (see the type-only import up top).
+
+/**
+ * Get-or-loads `id`'s `NotePage` — checks the in-memory store first (this
+ * session already opened it), then `persistence.readPage`, falling back
+ * to this store's own `ensurePage` synthesis (unchanged — same blank/
+ * seed-page behavior as before this ticket) only when no persisted file
+ * exists either, immediately persisting *that* result so it exists on
+ * disk from this point on. `./CanvasViewport.tsx` calls this from its
+ * existing "make sure this page is loaded" effect instead of a bare
+ * `ensurePage(pageId)` — a test environment with no real Tauri context
+ * and no `@tauri-apps/plugin-fs` mock degrades to exactly the same
+ * synthesis that effect always did: `persistence.readPage` rejects,
+ * caught here, falling through to `ensurePage`.
+ */
+export async function loadNotePage(persistence: PersistenceProvider, id: string): Promise<void> {
+  if (useNotePageStore.getState().pages[id]) return; // already loaded this session
+  try {
+    const page = await persistence.readPage(id);
+    useNotePageStore.setState((state) => ({ pages: { ...state.pages, [id]: page } }));
+  } catch {
+    const page = useNotePageStore.getState().ensurePage(id);
+    await persistence.writePage(id, page).catch((error) => {
+      console.error(`[autosave] failed to write initial pages/${id}.json`, error);
+    });
+  }
+}
+
+const AUTOSAVE_DEBOUNCE_MS = 800;
+
+export interface NotePageAutosave {
+  /** Debounces a `writePage` per changed page id (docs/architecture.md §6: "canvas edits" — ~800ms). Returns the zustand unsubscribe function. */
+  wire: () => () => void;
+  /** Immediately writes every page with a pending debounced write, skipping the wait — call before the window actually closes (../persistence/autosave.ts's `wireHardFlushOnClose`). */
+  flush: () => Promise<void>;
+}
+
+/**
+ * A factory, not a module-level singleton — keeps each pending-writes map
+ * scoped to one call (one real app session, or one test), rather than
+ * shared global state that would leak between tests or between a
+ * hypothetical second window.
+ */
+export function createNotePageAutosave(persistence: PersistenceProvider): NotePageAutosave {
+  const pending = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function scheduleWrite(id: string) {
+    const existing = pending.get(id);
+    if (existing) clearTimeout(existing);
+    pending.set(
+      id,
+      setTimeout(() => {
+        pending.delete(id);
+        const page = useNotePageStore.getState().pages[id];
+        if (!page) return; // page was removed from the store since the timer was scheduled
+        persistence.writePage(id, page).catch((error) => {
+          console.error(`[autosave] failed to write pages/${id}.json`, error);
+        });
+      }, AUTOSAVE_DEBOUNCE_MS),
+    );
+  }
+
+  return {
+    wire() {
+      return useNotePageStore.subscribe((state, prevState) => {
+        if (state.pages === prevState.pages) return;
+        for (const id of Object.keys(state.pages)) {
+          if (state.pages[id] !== prevState.pages[id]) scheduleWrite(id);
+        }
+      });
+    },
+    async flush() {
+      const ids = [...pending.keys()];
+      for (const id of ids) clearTimeout(pending.get(id)!);
+      pending.clear();
+      await Promise.all(
+        ids.map((id) => {
+          const page = useNotePageStore.getState().pages[id];
+          return page ? persistence.writePage(id, page) : Promise.resolve();
+        }),
+      );
+    },
+  };
+}
 
 export { createSeedNotePages, DEFAULT_BACKGROUND_COLOR } from "./mockData";
 export { CanvasViewport, useCanvasCoordinates } from "./CanvasViewport";

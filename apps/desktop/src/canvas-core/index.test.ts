@@ -1,11 +1,14 @@
 import { suggestTextColor } from "@linnote/contrast-util";
-import { beforeEach, describe, expect, it } from "vitest";
-import type { CanvasElement, SegmentBlock } from "../types";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PersistenceProvider } from "../persistence";
+import type { CanvasElement, NotePage, SegmentBlock } from "../types";
 import {
   addElementToPage,
   createBlankNotePage,
+  createNotePageAutosave,
   DEFAULT_VIEWPORT,
   getOrCreatePage,
+  loadNotePage,
   MAX_SCALE,
   MIN_SCALE,
   panViewport,
@@ -17,6 +20,36 @@ import {
   type Viewport,
 } from "./index";
 import { createSeedNotePages, DEFAULT_BACKGROUND_COLOR } from "./mockData";
+
+/** A fake `PersistenceProvider` — only the methods this file's own tests exercise are meaningfully implemented, the rest just satisfy the type. */
+function makeFakePersistence(overrides: Partial<PersistenceProvider> = {}): PersistenceProvider {
+  return {
+    readTree: vi.fn(async () => []),
+    writeTree: vi.fn(async () => {}),
+    readPage: vi.fn(async () => {
+      throw new Error("no persisted page");
+    }),
+    writePage: vi.fn(async () => {}),
+    deletePage: vi.fn(async () => {}),
+    readAsset: vi.fn(async () => new Blob()),
+    writeAsset: vi.fn(async () => {}),
+    readPluginSettings: vi.fn(async () => ({})),
+    writePluginSettings: vi.fn(async () => {}),
+    ...overrides,
+  };
+}
+
+function makePage(overrides: Partial<NotePage> = {}): NotePage {
+  return {
+    id: "page-1",
+    header: { title: "Untitled", align: "left" },
+    background: { kind: "color", color: "#ffffff" },
+    elements: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
 
 function makeSegment(overrides: Partial<SegmentBlock> = {}): SegmentBlock {
   return {
@@ -302,5 +335,120 @@ describe("useNotePageStore", () => {
     useNotePageStore.getState().setBackgroundColor("page-never-opened", "#123456");
 
     expect(useNotePageStore.getState().pages["page-never-opened"].background.color).toBe("#123456");
+  });
+});
+
+describe("loadNotePage (NTA-69)", () => {
+  beforeEach(() => {
+    useNotePageStore.setState({ pages: {} });
+  });
+
+  it("does nothing (no persistence call) when the page is already loaded this session", async () => {
+    useNotePageStore.setState({ pages: { "page-1": makePage() } });
+    const persistence = makeFakePersistence();
+
+    await loadNotePage(persistence, "page-1");
+
+    expect(persistence.readPage).not.toHaveBeenCalled();
+  });
+
+  it("loads a persisted page into the store when one exists on disk", async () => {
+    const persisted = makePage({ id: "page-1", header: { title: "From disk", align: "left" } });
+    const persistence = makeFakePersistence({ readPage: vi.fn(async () => persisted) });
+
+    await loadNotePage(persistence, "page-1");
+
+    expect(useNotePageStore.getState().pages["page-1"]).toEqual(persisted);
+  });
+
+  it("falls back to ensurePage's own synthesis and persists it when no file exists on disk", async () => {
+    const persistence = makeFakePersistence(); // readPage rejects by default
+
+    await loadNotePage(persistence, "page-never-before-opened");
+
+    const synthesized = useNotePageStore.getState().pages["page-never-before-opened"];
+    expect(synthesized).toBeDefined();
+    expect(persistence.writePage).toHaveBeenCalledWith("page-never-before-opened", synthesized);
+  });
+});
+
+describe("createNotePageAutosave (NTA-70)", () => {
+  beforeEach(() => {
+    useNotePageStore.setState({ pages: { "page-1": makePage({ id: "page-1" }) } });
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("debounces writePage — no write until 800ms of inactivity have passed", () => {
+    const persistence = makeFakePersistence();
+    const autosave = createNotePageAutosave(persistence);
+    const unsubscribe = autosave.wire();
+    try {
+      useNotePageStore.getState().setBackgroundColor("page-1", "#000000");
+
+      vi.advanceTimersByTime(500);
+      expect(persistence.writePage).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(300);
+      expect(persistence.writePage).toHaveBeenCalledTimes(1);
+      expect(persistence.writePage).toHaveBeenCalledWith("page-1", useNotePageStore.getState().pages["page-1"]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("coalesces a burst of edits to the same page into one write", () => {
+    const persistence = makeFakePersistence();
+    const autosave = createNotePageAutosave(persistence);
+    const unsubscribe = autosave.wire();
+    try {
+      useNotePageStore.getState().setBackgroundColor("page-1", "#111111");
+      vi.advanceTimersByTime(400);
+      useNotePageStore.getState().setBackgroundColor("page-1", "#222222");
+      vi.advanceTimersByTime(800);
+
+      expect(persistence.writePage).toHaveBeenCalledTimes(1);
+      expect(persistence.writePage).toHaveBeenCalledWith(
+        "page-1",
+        expect.objectContaining({ background: expect.objectContaining({ color: "#222222" }) }),
+      );
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("flush() writes every pending page immediately, skipping the debounce wait", async () => {
+    const persistence = makeFakePersistence();
+    const autosave = createNotePageAutosave(persistence);
+    const unsubscribe = autosave.wire();
+    try {
+      useNotePageStore.getState().setBackgroundColor("page-1", "#333333");
+      expect(persistence.writePage).not.toHaveBeenCalled();
+
+      await autosave.flush();
+
+      expect(persistence.writePage).toHaveBeenCalledTimes(1);
+
+      // The debounce timer that would have fired later must be cancelled — no second write.
+      vi.advanceTimersByTime(1000);
+      expect(persistence.writePage).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("stops scheduling writes after unsubscribing", () => {
+    const persistence = makeFakePersistence();
+    const autosave = createNotePageAutosave(persistence);
+    const unsubscribe = autosave.wire();
+    unsubscribe();
+
+    useNotePageStore.getState().setBackgroundColor("page-1", "#444444");
+    vi.advanceTimersByTime(1000);
+
+    expect(persistence.writePage).not.toHaveBeenCalled();
   });
 });
